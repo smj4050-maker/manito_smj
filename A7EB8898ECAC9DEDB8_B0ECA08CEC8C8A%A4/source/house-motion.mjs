@@ -7,9 +7,22 @@ export function getCrowdAppearance(count){
  return {scale:1.4,gap:{...CROWD_GAP}};
 }
 export const ACTION_LABELS={walk:'걷는 중',sit:'앉아서 인사 중'};
-export const POSE_FRAME_SECONDS={walk:.27,sit:1.05};
+export const WALK_CYCLE_SECONDS=.78;
 export function poseFrame(action,elapsed,tempo=1){
- return Math.floor(Math.max(0,elapsed)/(POSE_FRAME_SECONDS[action]*tempo))%4;
+ const time=Math.max(0,elapsed)/tempo;
+ if(action==='sit'){
+  if(time<1.25)return 0;
+  if(time<1.95)return 1;
+  if(time<2.40)return 0;
+  if(time<3.45)return 2;
+  if(time<4.35)return 3;
+  return 0;
+ }
+ const phase=(time%WALK_CYCLE_SECONDS)/WALK_CYCLE_SECONDS;
+ if(phase<.32)return 0;
+ if(phase<.5)return 1;
+ if(phase<.82)return 2;
+ return 3;
 }
 export function roomSeed(id){return [...id].reduce((v,c)=>(v*31+c.charCodeAt(0))>>>0,7);}
 export function makeHouseRoute(id,index,count){
@@ -47,7 +60,7 @@ export function createCrowd(ids){
   const route=makeHouseRoute(id,index,ids.length);
   const a={id,route,phase:route.phase,seed:roomSeed(id),action:'walk',actionStarted:0};
   a.tempo=.88+random(a)*.30;
-  a.actionStarted=-random(a)*POSE_FRAME_SECONDS.walk*4;
+  a.actionStarted=-random(a)*WALK_CYCLE_SECONDS;
   a.nextAction=5+random(a)*24;
   let bestGap=-Infinity;
   for(let attempt=0;attempt<240;attempt++){
@@ -58,7 +71,7 @@ export function createCrowd(ids){
   }
   if(!onStairs(a)&&random(a)<.18){
    a.action='sit';
-   a.actionStarted=-random(a)*POSE_FRAME_SECONDS.sit*2;
+   a.actionStarted=-random(a)*1.2;
    a.nextAction=5+random(a)*5;
   }
   agents.push(a);

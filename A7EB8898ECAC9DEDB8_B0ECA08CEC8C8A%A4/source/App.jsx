@@ -1064,7 +1064,7 @@ export default function App() {
         .room-stage { position: relative; isolation: isolate; z-index:0; width:1000px;height:800px;margin:auto; }
         .room-fit .room-stage { width:min(100%,1000px);height:auto;aspect-ratio:1000 / 800; }
         .room-scene {display:block;width:100%;height:100%;background:#f4f0e9;}
-        .room-background-layer {opacity:.48;filter:saturate(.35) contrast(.9);}
+        .room-background-layer {opacity:.86;filter:saturate(.90);}
         .resident-body {filter:drop-shadow(0 0 .8px #fffaf0);}
         .room-resident {cursor:pointer;outline:none;}
         .room-resident .world-avatar {width:28px;height:36px;pointer-events:none;}
@@ -1072,8 +1072,6 @@ export default function App() {
         .room-resident:hover .resident-tag,.room-resident:focus-visible .resident-tag,.room-resident.is-selected .resident-tag {visibility:visible;}
         .room-resident:focus-visible .resident-hit {stroke:#fff2b7;stroke-width:1;}
         .motion-sheet {display:block;overflow:hidden;pointer-events:none;}
-        .motion-sheet-strip {animation:motion-sheet-frames var(--pose-cycle,.84s) steps(4,end) infinite;}
-        @keyframes motion-sheet-frames {to {transform:translateX(-384px);}}
         .fire-tongue,.candle-flame {transform-box:fill-box;transform-origin:center bottom;animation:flame-flicker .9s ease-in-out infinite alternate;}
         .flame-inner {animation-delay:-.4s;animation-duration:.65s;}
         .hearth-glow,.candle-halo {animation:glow-flicker 2.2s ease-in-out infinite alternate;}
@@ -1090,7 +1088,7 @@ export default function App() {
         @media (max-width: 639px) { .room-toolbar { gap: 6px; font-size: 10px; } .room-count { font-size: 9px; } .room-edit { padding: 2px 5px; font-size: 9px; } .room-caption { font-size: 8px; } .cyworld-font input[type=text], .cyworld-font input[type=password], .cyworld-font textarea { font-size: 16px; } .login-panel { padding: 16px; } .login-panel h2 { font-size: 18px; } .login-panel p { margin-bottom: 12px; } }
         @media (prefers-reduced-motion: reduce) {
           .room-walker,.room-person,.room-light,.room-flame,.room-snow,.house-light,.fire-tongue,
-          .candle-flame,.hearth-glow,.candle-halo,.motion-sheet-strip {animation:none!important;}
+          .candle-flame,.hearth-glow,.candle-halo {animation:none!important;}
         }
       `}} />
     </div>
@@ -1099,11 +1097,14 @@ export default function App() {
 
 // ================= Components =================
 
-function buildDemoCrowdProfiles() {
+const DEMO_CROWD_SIZE = 80;
+
+function buildDemoCrowdProfiles(members, profiles) {
   const joined=Date.now();
-  return Object.fromEntries(Array.from({length:70},(_,index)=>{
-    const name=`테스트${String(index+1).padStart(2,'0')}`;
-    return [name,{_hasMinime:true,_memberId:`demo-${index+1}`,nickname:`미니미${index+1}`,avatar:AVATAR_OPTIONS[index%AVATAR_OPTIONS.length].id,roomEnteredAt:joined}];
+  return Object.fromEntries(Array.from({length:Math.max(DEMO_CROWD_SIZE,members.length)},(_,index)=>{
+    const staffName=members[index]?.name;
+    const name=staffName||`테스트${String(index+1).padStart(2,'0')}`;
+    return [`demo-${index+1}`,{_hasMinime:true,_memberId:`demo-${index+1}`,nickname:name,avatar:profiles?.[name]?.avatar||AVATAR_OPTIONS[index%AVATAR_OPTIONS.length].id,roomEnteredAt:joined}];
   }));
 }
 
@@ -1128,8 +1129,10 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
     } finally {setResetBusy(false);}
   };
   const [crowdTest, setCrowdTest] = useState(false);
-  const [demoCrowdProfiles,setDemoCrowdProfiles] = useState(buildDemoCrowdProfiles);
+  const [motionPreviewOpen,setMotionPreviewOpen]=useState(false);
+  const [demoCrowdProfiles,setDemoCrowdProfiles] = useState({});
   
+  const demoCount=Math.max(DEMO_CROWD_SIZE,members.length);
   const allUsers = config?.pairs ? Object.keys(config.pairs) : [];
   const submittedUsers = allUsers.filter(u => profiles?.[u]?.giftSubmitted);
   const pendingUsers = allUsers.filter(u => !profiles?.[u]?.giftSubmitted);
@@ -1203,19 +1206,19 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
       </div>
 
       <div className="bg-blue-50 border border-blue-200 rounded p-3 mb-3 flex flex-wrap gap-2 items-center justify-between">
-        <div><strong className="text-sm text-blue-800">🧪 70명 미니룸 동작 테스트</strong><p className="text-[11px] text-blue-600">가상 70명 · 실제 계정/방문자/기록 변경 없음 · 기기 화면 성능 확인용</p></div>
-        <button type="button" onClick={()=>{setDemoCrowdProfiles(buildDemoCrowdProfiles());setCrowdTest(true);}} className="bg-blue-600 text-white font-bold rounded px-4 py-2.5 text-sm">70명 테스트 시작</button>
+        <div><strong className="text-sm text-blue-800">🧪 {demoCount}명 미니룸 동작 테스트</strong><p className="text-[11px] text-blue-600">구성원 이름으로 미니룸 화면 테스트</p></div>
+        <button type="button" onClick={()=>{setDemoCrowdProfiles(buildDemoCrowdProfiles(members,profiles));setCrowdTest(true);}} className="bg-blue-600 text-white font-bold rounded px-4 py-2.5 text-sm">{demoCount}명 테스트 시작</button>
       </div>
-      {crowdTest&&<div className="fixed inset-0 z-[80] bg-black/70 flex flex-col p-2 sm:p-5" role="dialog" aria-modal="true" aria-label="70명 미니룸 테스트">
+      {crowdTest&&<section className="mb-4 rounded border border-blue-200 bg-white p-2" aria-label={`${demoCount}명 미니룸 테스트`}>
         <div className="bg-white max-w-6xl w-full mx-auto rounded p-3 flex flex-col min-h-0 max-h-full overflow-y-auto custom-scrollbar">
-          <div className="flex items-center justify-between gap-3 pb-2"><div><strong className="text-sm text-blue-800">🧪 가상 70명 동시 표시</strong><p className="text-[11px] text-slate-500">실제 서버 접속 부하 테스트가 아닌 휴대폰/PC 애니메이션 테스트입니다.</p></div><button onClick={()=>setCrowdTest(false)} className="bg-slate-800 text-white rounded px-4 py-2 text-sm font-bold shrink-0">테스트 종료 ✕</button></div>
-          <details className="mb-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 shrink-0">
+          <div className="flex items-center justify-between gap-3 pb-2"><div><strong className="text-sm text-blue-800">🧪 테스트 미니미 {Object.keys(demoCrowdProfiles).length}명</strong><p className="text-[11px] text-slate-500">이름은 미니미를 누르면 보여요.</p></div><button onClick={()=>{setMotionPreviewOpen(false);setCrowdTest(false);setDemoCrowdProfiles({});}} className="bg-slate-800 text-white rounded px-4 py-2 text-sm font-bold shrink-0">테스트 종료 ✕</button></div>
+          <details onToggle={event=>setMotionPreviewOpen(event.currentTarget.open)} className="mb-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 shrink-0">
             <summary className="cursor-pointer text-sm font-bold text-amber-950">4프레임 동작 크게 보기</summary>
-            <MinimeMotionPreview />
+            {motionPreviewOpen&&<MinimeMotionPreview />}
           </details>
           <ChristmasMiniroom profiles={demoCrowdProfiles} myName="" myMemberId="" onEdit={()=>{}} treePosts={[]} onTreeSave={()=>{}} onTreeDelete={()=>{}} demoMode />
         </div>
-      </div>}
+      </section>}
 
       {/* 액션 버튼 */}
       <div className="space-y-2 mb-4 shrink-0">
@@ -1390,18 +1393,27 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
 function SpriteDefinitions() {
   return <svg width="0" height="0" className="sprite-definitions" aria-hidden="true"><defs>{AVATAR_ATLASES.map((atlas,index)=><g key={index}><image id={`avatar-atlas-${index}`} href={atlas.url} width={atlas.width} height={atlas.height}/>{atlas.cells.map((cell,cellIndex)=><clipPath key={cellIndex} id={`avatar-clip-${index}-${cellIndex}`} clipPathUnits="userSpaceOnUse"><rect x={cell.x} y={cell.y} width={cell.w} height={cell.h}/></clipPath>)}</g>)}</defs></svg>;
 }
-function MinimeMotionSheet({ avatar, action, size }) {
+function MinimeMotionSheet({ avatar, action, size, elapsed }) {
   const row=AVATARS.indexOf(resolveAvatar(avatar));
-  const walking=action==='walk';
-  return <svg width={size} height={size} viewBox="0 0 96 96"
-    className="motion-sheet" style={{'--pose-cycle':walking?'1.08s':'4.2s'}} aria-hidden="true">
-    <image href={minimePoseAtlas} className="motion-sheet-strip"
-      x={walking?0:-384} y={-96*row} width="768" height="2880"/>
+  const cell=(action==='sit'?4:0)+poseFrame(action,elapsed);
+  return <svg width={size} height={size} viewBox={`${cell*96} ${row*96} 96 96`}
+    className="motion-sheet" aria-hidden="true">
+    <image href={minimePoseAtlas} width="768" height="2880"/>
   </svg>;
 }
 
 function MinimeMotionPreview() {
   const [avatar,setAvatar]=useState('mini-12');
+  const [elapsed,setElapsed]=useState(0);
+  useEffect(()=>{
+    const start=performance.now();
+    const timer=setInterval(()=>{
+      if(!document.hidden&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+        setElapsed((performance.now()-start)/1000);
+      }
+    },45);
+    return()=>clearInterval(timer);
+  },[]);
   return <div className="pt-2">
     <label className="flex items-center gap-2 text-xs">
       미니미
@@ -1411,7 +1423,7 @@ function MinimeMotionPreview() {
     </label>
     <div className="mt-2 grid grid-cols-2 gap-2">{[['walk','걷기'],['sit','앉아서 인사']].map(([action,label])=>
       <div key={action} className="flex flex-col items-center rounded bg-white py-1">
-        <MinimeMotionSheet avatar={avatar} action={action} size={88}/>
+        <MinimeMotionSheet avatar={avatar} action={action} size={88} elapsed={action==='sit'?elapsed%6:elapsed}/>
         <span className="text-[11px] text-slate-600">{label}</span>
       </div>
     )}</div>
@@ -1469,9 +1481,10 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
     const atlas=context?new Image():null,tree=context?new Image():null;
     if(atlas){atlas.src=minimePoseAtlas;tree.src=BARE_TREE;}
     const sprites=new Map(people.map(person=>[person.id,AVATARS.indexOf(resolveAvatar(person.avatar))]));
+    const mobile=window.matchMedia('(max-width: 639px)');
     const drawSprite=person=>{
       const offset=(person.action==='sit'?4:0)+(reducedMotion?0:poseFrame(person.action,world.time-person.actionStarted,person.tempo));
-      const width=44*appearance.scale,height=width*650/800;
+      const width=44*appearance.scale*(mobile.matches?1.16:1),height=width*650/800;
       const mirror=person.action==='walk'&&person.facing===-1;
       if(mirror){
         context.save();
