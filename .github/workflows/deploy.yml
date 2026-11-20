@@ -1,0 +1,65 @@
+name: Deploy Manito Improved Site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Find source directory
+        id: locate
+        shell: bash
+        run: |
+          SOURCE=$(find . -maxdepth 4 -type f -path '*/source/package.json' -print -quit)
+          if [ -z "$SOURCE" ]; then
+            echo "Source package.json not found"
+            exit 1
+          fi
+          DIR=$(dirname "$SOURCE")
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "Using $DIR"
+
+      - name: Install and build
+        working-directory: ${{ steps.locate.outputs.dir }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Prepare site
+        shell: bash
+        run: |
+          mkdir -p public
+          cp "${{ steps.locate.outputs.dir }}/../index.html" public/index.html
+          test -s public/index.html
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload website
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - name: Deploy website
+        id: deployment
+        uses: actions/deploy-pages@v4
