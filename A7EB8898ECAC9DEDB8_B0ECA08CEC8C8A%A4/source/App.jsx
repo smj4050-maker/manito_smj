@@ -1,8 +1,8 @@
 import minimePoseAtlas from './minime-motion-poses.js';
-import { createCrowd, stepCrowd, ACTION_LABELS, getCrowdAppearance, isRoomVisible } from './house-motion.mjs';
+import { createCrowd, stepCrowd, poseFrame, ACTION_LABELS, getCrowdAppearance, isRoomVisible } from './house-motion.mjs';
 import { ROOM_BACKGROUND, BARE_TREE } from './room-background.js';
 import { AVATAR_ATLASES } from './avatars.js';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useId } from 'react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithEmailAndPassword, createUserWithEmailAndPassword, linkWithCredential, EmailAuthProvider, onAuthStateChanged, signOut } from 'firebase/auth';
 import { getFirestore, doc, collection, query, orderBy, limit, onSnapshot, getDoc, getDocFromServer, runTransaction, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
@@ -1023,6 +1023,8 @@ export default function App() {
         .tab-new {font-size:8px;line-height:1;margin-left:4px;background:#f97316;color:white;border-radius:3px;padding:2px 3px;vertical-align:middle;}
         .room-floor-label {position:absolute;left:1.5%;font-size:10px;font-weight:bold;color:#795f4e;background:#fff7e8e8;border:1px solid #dcc6a9;padding:2px 6px;border-radius:3px;z-index:1;}
         .room-tree-button {display:block;width:100%;font-size:10px;color:#507558;background:#f4f8ed;border:0;border-bottom:1px solid #d7dccb;padding:5px;}
+        .interactive-tree[role="button"] {cursor:pointer;}
+        .interactive-tree:focus-visible .bare-tree-image {filter:drop-shadow(0 0 4px #fff2b7);}
         .tree-decoration {pointer-events:none;} .tree-note-hit {position:absolute;width:2.5%;height:auto;aspect-ratio:1;background:transparent;border:0;padding:0;translate:-50% -50%;z-index:1002;cursor:pointer;} .tree-decoration:hover {filter:brightness(1.15);}
         .room-toolbar { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; color: #695447; font-size: 11px; border-bottom: 1px solid #dfcfbe; background: #fffaf1; }
         .room-count { margin-left: auto; color: #907966; font-size: 10px; white-space: nowrap; }
@@ -1038,69 +1040,12 @@ export default function App() {
         .resident-tag {visibility:hidden;}
         .room-resident:hover .resident-tag,.room-resident:focus-visible .resident-tag,.room-resident.is-selected .resident-tag {visibility:visible;}
         .room-resident:focus-visible .resident-hit {stroke:#fff2b7;stroke-width:1;}
-        .resident-raised-hand,.resident-heart,.resident-surprise,.resident-prank,.resident-book,.resident-admire,.resident-camera,.resident-flash {display:none;pointer-events:none;}
         .motion-sheet {display:block;overflow:hidden;pointer-events:none;}
         .motion-sheet-strip {animation:motion-sheet-frames var(--pose-cycle,.84s) steps(4,end) infinite;}
         @keyframes motion-sheet-frames {to {transform:translateX(-384px);}}
-        .room-resident .resident-walk-sheet,.room-resident .resident-cup-sheet {display:none;}
-        .room-resident[data-action="walk"] .resident-walk-sheet,
-        .room-resident[data-action="sit"] .resident-cup-sheet,
-        .room-resident[data-action="warm"] .resident-cup-sheet {display:block;}
-        .room-resident[data-action="walk"] .resident-pose,
-        .room-resident[data-action="sit"] .resident-pose,
-        .room-resident[data-action="warm"] .resident-pose {display:none;}
-        .room-resident[data-action="wave"] .resident-raised-hand,.room-resident[data-action="greet"] .resident-raised-hand,.room-resident[data-action="prank"] .resident-raised-hand {display:block;transform-origin:12px -20px;animation:minime-wave .6s ease-in-out infinite;}
-        .room-resident[data-action="wave"] .resident-pose,.room-resident[data-action="greet"] .resident-pose {animation:gentle-greet 1.15s ease-in-out infinite;transform-origin:0 -18px;}
-        .room-resident[data-action="heart"] .resident-pose {animation:gentle-heart 2.4s ease-in-out infinite;transform-origin:0 -16px;}
-        .room-resident[data-action="photo"] .resident-pose {animation:gentle-photo 2.5s ease-in-out infinite;transform-origin:0 -18px;}
-        @keyframes gentle-greet {0%,100%{transform:rotate(0)}25%{transform:rotate(-3deg)}60%{transform:rotate(3deg)}}
-        @keyframes gentle-heart {0%,100%{transform:translateY(0)}30%,50%{transform:translateY(-2px)}}
-        @keyframes gentle-photo {0%,100%{transform:translateY(0)}35%,50%{transform:translateY(-2px)}}
-        .room-resident[data-action="heart"] .resident-heart {display:block;}
-        .room-resident[data-action="read"] .resident-book {display:block;transform-origin:0 -13px;}
-        /* Multi-pose gestures: prepare -> gesture -> hold -> recover. */
-        .room-resident[data-action="wave"] .resident-raised-hand,.room-resident[data-action="greet"] .resident-raised-hand {animation:minime-wave-frames 2.4s steps(1,end) infinite;}
-        .room-resident[data-action="heart"] .resident-heart {animation:minime-heart-frames 2.8s steps(1,end) infinite;}
-        .room-resident[data-action="read"] .resident-book {animation:minime-page-frames 3.2s steps(1,end) infinite;}
-        @keyframes minime-wave-frames {
-          0%,100% {opacity:0;transform:rotate(-40deg);}
-          25% {opacity:1;transform:rotate(-19deg);}
-          50% {opacity:1;transform:rotate(20deg);}
-          75% {opacity:1;transform:rotate(-8deg) translateY(2px);}
-        }
-        @keyframes minime-heart-frames {
-          0%,100% {opacity:0;transform:translateY(4px) scale(.55);}
-          25% {opacity:1;transform:translateY(-2px);}
-          50% {opacity:1;transform:translateY(-7px) scale(1.25);}
-          75% {opacity:.5;transform:translateY(-14px);}
-        }
-        @keyframes minime-page-frames {
-          0%,100% {transform:rotate(-4deg);}
-          25% {transform:translateY(-2px);}
-          50% {transform:translateY(-2px) skewX(-19deg) scaleX(.8);}
-          75% {transform:rotate(4deg);}
-        }
-        .room-resident[data-action="photo"] .resident-camera,.room-resident[data-action="photo"] .resident-flash {display:block;}
-        .room-resident[data-action="photo"] .resident-camera {animation:minime-camera 2.5s ease-in-out infinite;transform-origin:0px -18px;}
-        .room-resident[data-action="photo"] .resident-flash {animation:minime-flash 2.5s steps(1,end) infinite;}
-        @keyframes minime-camera {0%,12%,100%{transform:translateY(5px) scale(.8);opacity:0}22%,76%{transform:translateY(0) scale(1);opacity:1}83%{transform:translateY(2px);opacity:.5}}
-        @keyframes minime-flash {0%,39%,47%,100%{opacity:0}40%,46%{opacity:1}}
-        .room-resident[data-action="surprise"] .resident-surprise {display:block;animation:minime-pop .7s ease-in-out infinite;}
-        .room-resident[data-action="surprise"] .resident-pose {animation:minime-startle .7s ease-in-out infinite;}
-        .room-resident[data-action="prank"] .resident-prank {display:block;animation:minime-pop .8s ease-in-out infinite;}
-        .room-resident[data-action="prank"] .resident-pose {animation:minime-play .8s ease-in-out infinite;}
-        .room-resident[data-action="read"] .resident-pose {animation:minime-read 2s ease-in-out infinite;}
-        .room-resident[data-action="admire"] .resident-admire {display:block;animation:minime-pop 2s ease-in-out infinite;}
         .fire-tongue,.candle-flame {transform-box:fill-box;transform-origin:center bottom;animation:flame-flicker .9s ease-in-out infinite alternate;}
         .flame-inner {animation-delay:-.4s;animation-duration:.65s;}
         .hearth-glow,.candle-halo {animation:glow-flicker 2.2s ease-in-out infinite alternate;}
-        .room-resident[data-action="greet"] .resident-raised-hand{animation-duration:1.6s;}
-        .room-resident[data-action="heart"] .resident-heart{animation-duration:calc(var(--motion-speed,.9s) * 3.1);}
-        @keyframes minime-wave {0%,100%{transform:rotate(-15deg) translateY(1px)}12%{transform:rotate(-5deg) translateY(0)}25%{transform:rotate(12deg) translateY(-1px)}38%{transform:rotate(-6deg)}51%{transform:rotate(16deg) translateY(-1px)}65%{transform:rotate(-7deg)}78%{transform:rotate(11deg)}90%{transform:rotate(-11deg)}}
-        @keyframes minime-pop {0%,100%{opacity:.45;transform:translateY(0)}50%{opacity:1;transform:translateY(-2px)}}
-        @keyframes minime-startle {0%,100%{transform:translateY(0)}35%{transform:translateY(-3px)}}
-        @keyframes minime-play {0%,100%{transform:translateX(0)}50%{transform:translateX(calc(var(--face,1)*2px))}}
-        @keyframes minime-read {0%,12%,100%{transform:translateY(0) rotate(0)}24%{transform:translateY(.5px) rotate(-1deg)}38%{transform:translateY(1px) rotate(-1.4deg)}52%,64%{transform:translateY(1px) rotate(0)}78%{transform:translateY(.5px) rotate(1deg)}90%{transform:translateY(0) rotate(0)}}
         @keyframes flame-flicker {0%{opacity:.65;transform:scale(.9,.86) skewX(-3deg)}100%{opacity:1;transform:scale(1.04,1.07) skewX(3deg)}}
         @keyframes glow-flicker {0%{opacity:.4}100%{opacity:.85}}
         .house-light {animation:room-twinkle 2.6s ease-in-out infinite;}
@@ -1112,7 +1057,10 @@ export default function App() {
         @keyframes room-twinkle { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
         @media (min-width: 1024px) { .room-stage { width:1000px;height:800px; } .room-pan-hint { display: none; } }
         @media (max-width: 639px) { .room-toolbar { gap: 6px; font-size: 10px; } .room-count { font-size: 9px; } .room-edit { padding: 2px 5px; font-size: 9px; } .room-caption { font-size: 8px; } .cyworld-font input[type=text], .cyworld-font input[type=password], .cyworld-font textarea { font-size: 16px; } .login-panel { padding: 16px; } .login-panel h2 { font-size: 18px; } .login-panel p { margin-bottom: 12px; } }
-        @media (prefers-reduced-motion: reduce) { .room-walker,.room-person,.room-light,.room-flame,.room-snow,.house-light,.fire-tongue,.candle-flame,.hearth-glow,.candle-halo,.resident-pose,.resident-raised-hand,.resident-heart,.resident-book,.resident-camera,.resident-flash,.motion-sheet-strip { animation:none!important; } .room-resident .resident-flash {display:none;} }
+        @media (prefers-reduced-motion: reduce) {
+          .room-walker,.room-person,.room-light,.room-flame,.room-snow,.house-light,.fire-tongue,
+          .candle-flame,.hearth-glow,.candle-halo,.motion-sheet-strip {animation:none!important;}
+        }
       `}} />
     </div>
   );
@@ -1379,12 +1327,13 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
 function SpriteDefinitions() {
   return <svg width="0" height="0" className="sprite-definitions" aria-hidden="true"><defs>{AVATAR_ATLASES.map((atlas,index)=><g key={index}><image id={`avatar-atlas-${index}`} href={atlas.url} width={atlas.width} height={atlas.height}/>{atlas.cells.map((cell,cellIndex)=><clipPath key={cellIndex} id={`avatar-clip-${index}-${cellIndex}`} clipPathUnits="userSpaceOnUse"><rect x={cell.x} y={cell.y} width={cell.w} height={cell.h}/></clipPath>)}</g>)}</defs></svg>;
 }
-function MinimeMotionSheet({ avatar, action, x, y, size, className = '' }) {
+function MinimeMotionSheet({ avatar, action, x, y, size, live = false }) {
   const row=AVATARS.indexOf(resolveAvatar(avatar));
   const walking=action==='walk';
   return <svg x={x} y={y} width={size} height={size} viewBox="0 0 96 96"
-    className={`motion-sheet ${className}`} style={{'--pose-cycle':walking?'.84s':'2.8s'}} aria-hidden="true">
-    <image href={minimePoseAtlas} className="motion-sheet-strip" x={walking?0:-384} y={-96*row} width="768" height="2880"/>
+    className="motion-sheet" style={{'--pose-cycle':walking?'.84s':'2.8s'}} aria-hidden="true">
+    <image href={minimePoseAtlas} className={live?undefined:'motion-sheet-strip'}
+      x={walking?0:-384} y={-96*row} width="768" height="2880"/>
   </svg>;
 }
 
@@ -1433,6 +1382,8 @@ function ProfileSetupView({onSetup,initialProfile,onCancel}) {
   </div>;
 }
 function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSave,onTreeDelete,demoMode=false}) {
+  const treeMaskId=`minime-tree-mask-${useId().replace(/[^a-zA-Z0-9_-]/g,'')}`;
+  const treeMaskFilterId=`${treeMaskId}-silhouette`;
   const [selected,setSelected]=useState(null),[expanded,setExpanded]=useState(false),[treeOpen,setTreeOpen]=useState(false),[selectedNote,setSelectedNote]=useState(null);
   const [reducedMotion,setReducedMotion]=useState(()=>window.matchMedia?.('(prefers-reduced-motion: reduce)').matches||false);
   const scroller=useRef(null),scene=useRef(null),crowd=useRef(null);
@@ -1459,16 +1410,24 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
         residents.forEach(node=>{
           const person=byId.get(node.dataset.memberId);if(!person)return;
           node.setAttribute('transform',`translate(${person.x.toFixed(2)} ${person.y.toFixed(2)})`);
-          const action=(person.action==='walk'&&!person.moving)?'rest':person.action;
+          const layer=node.parentElement;
+          const behindTree=person.y>=240&&person.y<482&&person.x>=300&&person.x<=700;
+          if(behindTree&&!layer.hasAttribute('mask'))layer.setAttribute('mask',`url(#${treeMaskId})`);
+          if(!behindTree&&layer.hasAttribute('mask'))layer.removeAttribute('mask');
+          const {action,actionStarted}=person;
+          const frameIndex=reducedMotion?0:poseFrame(action,world.time-actionStarted);
+          const offset=(action==='sit'?4:0)+frameIndex;
+          const sprite=node.querySelector('.motion-sheet');
+          const viewport=`${offset*96} 0 96 96`;
+          if(sprite.getAttribute('viewBox')!==viewport)sprite.setAttribute('viewBox',viewport);
           if(node.dataset.action!==action){node.dataset.action=action;node.querySelector('.resident-status').textContent=ACTION_LABELS[action];}
-          node.dataset.partner=person.partner||'';node.style.setProperty('--face',person.facing||1);
         });
 
       }
       frame=requestAnimationFrame(draw);
     };
     draw(performance.now());return()=>cancelAnimationFrame(frame);
-  },[people.map(person=>person.id).join('|')]);
+  },[people.map(person=>person.id).join('|'),reducedMotion]);
   const ornamentPoint=index=>{
     let row=0,slot=index;while(slot>=row+2){slot-=row+2;row++;}
     const rows=Math.max(11,Math.ceil((-3+Math.sqrt(9+8*notes.length))/2)),span=12+row*88/(rows-1);
@@ -1480,6 +1439,15 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
     <div className="room-scroll custom-scrollbar" ref={scroller} tabIndex={0} aria-label="계단으로 연결된 크리스마스 나무집">
       <div className="room-stage">
         <svg ref={scene} viewBox="0 0 1000 650" className="room-scene connected-house" preserveAspectRatio="none" role="group" aria-label="1층과 2층을 계단으로 오가는 울장복 미니미들">
+          <defs>
+            <filter id={treeMaskFilterId} colorInterpolationFilters="sRGB">
+              <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+            </filter>
+            <mask id={treeMaskId} maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="1000" height="650" style={{maskType:'luminance'}}>
+              <rect width="1000" height="650" fill="white"/>
+              <image href={BARE_TREE} x="355" y="240" width="290" height="250" preserveAspectRatio="none" filter={`url(#${treeMaskFilterId})`}/>
+            </mask>
+          </defs>
           <g className="room-background-layer" pointerEvents="none">
           <image href={ROOM_BACKGROUND} width="1000" height="650" preserveAspectRatio="none" pointerEvents="none"/>
           <defs><radialGradient id="fire-warm-glow"><stop stopColor="#ffbd58" stopOpacity=".55"/><stop offset="1" stopColor="#ffae42" stopOpacity="0"/></radialGradient></defs>
@@ -1490,36 +1458,32 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
           {!reducedMotion&&Array.from({length:14},(_,index)=><circle key={index} cx={index%2?25+(index*13)%65:930+(index*7)%53} cy="-10" r={1.2+index%3*.4} fill="#ecf8ff" opacity=".8" pointerEvents="none"><animate attributeName="cy" from="-10" to="650" dur={`${13+index%8}s`} begin={`-${index*2}s`} repeatCount="indefinite"/></circle>)}
           </g>
           <g className="house-depth-stage">
-          <g className="interactive-tree" data-depth="482" data-ornament-count={notes.length} pointerEvents="none" aria-label={`우리들의 트리: 장식 ${notes.length}개`}>
+          <g className="interactive-tree" data-ornament-count={notes.length}
+            role={demoMode?undefined:'button'} tabIndex={demoMode?undefined:0}
+            aria-label={demoMode?undefined:`트리에 장식과 한마디 달기. 현재 장식 ${notes.length}개`}
+            aria-haspopup={demoMode?undefined:'dialog'} pointerEvents="none"
+            onClick={demoMode?undefined:()=>setTreeOpen(true)}
+            onKeyDown={demoMode?undefined:event=>{
+              if(event.key==='Enter'||event.key===' '){event.preventDefault();setTreeOpen(true);}
+            }}>
             <ellipse cx="500" cy="484" rx="126" ry="15" fill="#2d281c44"/>
-            <image href={BARE_TREE} x="355" y="240" width="290" height="250" preserveAspectRatio="none" className="bare-tree-image"/>
+            <image href={BARE_TREE} x="355" y="240" width="290" height="250" preserveAspectRatio="none"
+              className="bare-tree-image" pointerEvents={demoMode?'none':'visiblePainted'}/>
             {notes.map((note,index)=>{const point=ornamentPoint(index);return <g key={note.memberId} className="tree-decoration" transform={`translate(${point.x} ${point.y})`} aria-hidden="true"><TreeOrnament kind={note.kind} color={note.color}/></g>;})}
           </g>
-          {people.map((person,index)=>{
+          {people.map(person=>{
             const mine=person.name===myName;
             const width=Math.min(138,Math.max(46,(person.nickname.length+(mine?3:0))*9));
-            return <g key={person.id} className={`room-resident ${selected===person.id?'is-selected':''}`} style={{'--motion-speed':`${.88+(index%7)*.045}s`}} data-member-id={person.id} data-stair-route="up-and-down" role="button" tabIndex={0} aria-label={`${person.nickname}의 미니미${mine?' (내 미니미)':''}`} aria-pressed={selected===person.id} onClick={()=>setSelected(selected===person.id?null:person.id)} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setSelected(selected===person.id?null:person.id);}}}>
+            return <g key={person.id}><g className={`room-resident ${selected===person.id?'is-selected':''}`} data-member-id={person.id} data-stair-route="up-and-down" role="button" tabIndex={0} aria-label={`${person.nickname}의 미니미${mine?' (내 미니미)':''}`} aria-pressed={selected===person.id} onClick={()=>setSelected(selected===person.id?null:person.id)} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setSelected(selected===person.id?null:person.id);}}}>
               <title className="resident-status">산책 중</title>
               <g className="resident-visual" transform={`scale(${appearance.scale} ${appearance.scale*650/800})`}>
               <ellipse cx="0" cy="0" rx="10" ry="2.5" fill="#382b2366" pointerEvents="none"/>
-              <g className="resident-pose" style={{animationDelay:`-${index*.37}s`}}>
-                <g className="resident-body" transform="translate(-14 -36)"><PixelCharacter avatar={person.avatar} className="world-avatar" width={28} height={36}/></g>
-              </g>
-              <MinimeMotionSheet avatar={person.avatar} action="walk" x={-22} y={-41} size={44} className="resident-walk-sheet"/>
-              <MinimeMotionSheet avatar={person.avatar} action="sit" x={-22} y={-41} size={44} className="resident-cup-sheet"/>
-              <g className="resident-raised-hand" pointerEvents="none"><path d="M11-20L15-26L15-31" stroke="#e3c9a5" strokeWidth="3" fill="none"/><rect x="12" y="-35" width="6" height="6" rx="1" fill="#fff1d6"/></g>
-              <g className="resident-heart" pointerEvents="none"><text x="0" y="-39" textAnchor="middle" fontSize="15" fill="#ff6c8d">♥</text></g>
-              <g className="resident-surprise" pointerEvents="none"><text x="0" y="-40" textAnchor="middle" fontSize="15" fontWeight="bold" fill="#ffe697" stroke="#76554a" strokeWidth=".5">!</text></g>
-              <g className="resident-prank" pointerEvents="none"><text x="17" y="-31" textAnchor="middle" fontSize="14" fill="#ffdf91">✦</text></g>
-              <g className="resident-camera" pointerEvents="none"><rect x="-8" y="-22" width="16" height="11" rx="2" fill="#44566c" stroke="#e2eaf0" strokeWidth="1"/><circle cx="0" cy="-16" r="4" fill="#a7d7ee"/><rect x="-5" y="-25" width="7" height="3" rx="1" fill="#44566c"/></g>
-              <g className="resident-flash" pointerEvents="none"><path d="M-3-30L0-38L3-30L11-30L5-25L7-18L0-22L-7-18L-5-25L-11-30Z" fill="#ffefa6" stroke="#ffffff" strokeWidth="1"/></g>
-              <g className="resident-book" pointerEvents="none"><path d="M-10-20Q-4-22 0-18Q4-22 10-20V-10Q4-12 0-8Q-4-12-10-10Z" fill="#f4e5b8" stroke="#865f4a" strokeWidth="1"/><path d="M0-18V-8M-7-17L-3-16M3-16L7-17" stroke="#af8c62" strokeWidth=".7"/></g>
-              <g className="resident-admire" pointerEvents="none"><text x="0" y="-40" textAnchor="middle" fontSize="11" fill="#fff0b0">✧ ✧</text></g>
+              <MinimeMotionSheet avatar={person.avatar} action="walk" x={-22} y={-41} size={44} live/>
               <rect x="-14" y="-37" width="28" height="39" fill="transparent" className="resident-hit"/>
               {mine&&<path d="M-3 4H3L0 7Z" fill="#5bac83" pointerEvents="none"/>}
               </g>
               <g className="resident-tag" transform={`translate(0 ${-48*appearance.scale*650/800})`} pointerEvents="none" aria-hidden="true"><rect x={-width/2} width={width} height="16" rx="3" fill="#463026ee" stroke="#fff0ce"/><text y="11.5" textAnchor="middle" fontSize="10" fill="#fff4da">{person.nickname}{mine?' · 나':''}</text></g>
-            </g>;
+            </g></g>;
           })}
           </g>
         </svg>
