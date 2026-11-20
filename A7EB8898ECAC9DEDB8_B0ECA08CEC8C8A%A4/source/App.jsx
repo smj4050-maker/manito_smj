@@ -1,3 +1,4 @@
+import minimePoseAtlas from './minime-reference-poses.js';
 import { createCrowd, stepCrowd, ACTION_LABELS, getCrowdAppearance, isRoomVisible } from './house-motion.mjs';
 import { ROOM_BACKGROUND, BARE_TREE } from './room-background.js';
 import { AVATAR_ATLASES } from './avatars.js';
@@ -1037,45 +1038,22 @@ export default function App() {
         .resident-tag {visibility:hidden;}
         .room-resident:hover .resident-tag,.room-resident:focus-visible .resident-tag,.room-resident.is-selected .resident-tag {visibility:visible;}
         .room-resident:focus-visible .resident-hit {stroke:#fff2b7;stroke-width:1;}
-        .resident-seat,.resident-seated-feet,.resident-raised-hand,.resident-heart,.resident-surprise,.resident-prank,.resident-book,.resident-admire,.resident-camera,.resident-flash {display:none;pointer-events:none;}
-        .resident-walking {display:none;}
-        .room-resident[data-action="walk"] .resident-standing {display:none;}
-        .room-resident[data-action="walk"] .resident-walking {display:block;}
-        /* Contact, passing, opposite contact, opposite passing. */
-        .walk-upper {transform-origin:0 -10px;animation:walk-body .80s steps(1,end) infinite;}
-        .walk-left-step {transform-origin:-4px -10px;animation:walk-leg .80s steps(1,end) infinite;}
-        .walk-right-step {transform-origin:4px -10px;animation:walk-leg .80s steps(1,end) -.40s infinite;}
-        @keyframes walk-body {
-          0%,100% {transform:rotate(-5deg);}
-          25% {transform:translateY(-1.7px) rotate(-1deg);}
-          50% {transform:rotate(5deg);}
-          75% {transform:translateY(-1.7px) rotate(1deg);}
-        }
-        @keyframes walk-leg {
-          0%,100% {transform:translateX(-3px) rotate(24deg);}
-          25% {transform:translate(1px,-3px) rotate(-10deg);}
-          50% {transform:translateX(3px) rotate(-24deg);}
-          75% {transform:translate(0,-.7px);}
-        }
-        .resident-cup {display:none;pointer-events:none;}
-        .room-resident[data-action="sit"] .resident-cup,.room-resident[data-action="warm"] .resident-cup {
-          display:block;animation:cup-poses 2.8s steps(1,end) infinite;
-        }
-        .room-resident[data-action="sit"] .resident-raised-hand {
-          display:block;transform-origin:10px -18px;animation:seated-wave 2.8s steps(1,end) infinite;
-        }
-        @keyframes cup-poses {
-          0%,100% {transform:translate(0,0);}
-          25% {transform:translate(-3px,-1px);}
-          50% {transform:translate(0,-6px);}
-          75% {transform:translateY(1px);}
-        }
-        @keyframes seated-wave {
-          0%,50%,75%,100% {visibility:hidden;}
-          25% {visibility:visible;transform:translateY(4px) rotate(12deg);}
-        }
-        .room-resident[data-action="sit"] .resident-seat,.room-resident[data-action="sit"] .resident-seated-feet,.room-resident[data-action="warm"] .resident-seat,.room-resident[data-action="warm"] .resident-seated-feet {display:block;}
-        .room-resident[data-action="sit"] .resident-pose,.room-resident[data-action="warm"] .resident-pose {clip-path:url(#resident-seated-clip);transform:translateY(3px);}
+        .resident-raised-hand,.resident-heart,.resident-surprise,.resident-prank,.resident-book,.resident-admire,.resident-camera,.resident-flash {display:none;pointer-events:none;}
+        .motion-sheet {display:block;overflow:hidden;pointer-events:none;}
+        .motion-sheet-strip {animation:motion-sheet-frames var(--pose-cycle,.84s) steps(4,end) infinite;}
+        @keyframes motion-sheet-frames {to {transform:translateX(-448px);}}
+        .room-resident .resident-sheet {display:none;}
+        .room-resident[data-poses="walk"][data-action="walk"] .resident-sheet,
+        .room-resident[data-poses="cup"][data-action="sit"] .resident-sheet,
+        .room-resident[data-poses="cup"][data-action="warm"] .resident-sheet {display:block;}
+        .room-resident[data-poses="walk"][data-action="walk"] .resident-pose,
+        .room-resident[data-poses="cup"][data-action="sit"] .resident-pose,
+        .room-resident[data-poses="cup"][data-action="warm"] .resident-pose {display:none;}
+        .resident-rest-cup {display:none;}
+        .room-resident:not([data-poses="cup"])[data-action="warm"] .resident-rest-cup,
+        .room-resident:not([data-poses="cup"])[data-action="sit"] .resident-rest-cup {display:block;}
+        .room-resident[data-action="walk"] .resident-pose {animation:whole-avatar-step .84s ease-in-out infinite;}
+        @keyframes whole-avatar-step {0%,50%,100%{transform:translateY(0);}25%,75%{transform:translateY(-1.5px);}}
         .room-resident[data-action="wave"] .resident-raised-hand,.room-resident[data-action="greet"] .resident-raised-hand,.room-resident[data-action="prank"] .resident-raised-hand {display:block;transform-origin:12px -20px;animation:minime-wave .6s ease-in-out infinite;}
         .room-resident[data-action="wave"] .resident-pose,.room-resident[data-action="greet"] .resident-pose {animation:gentle-greet 1.15s ease-in-out infinite;transform-origin:0 -18px;}
         .room-resident[data-action="heart"] .resident-pose {animation:gentle-heart 2.4s ease-in-out infinite;transform-origin:0 -16px;}
@@ -1123,8 +1101,6 @@ export default function App() {
         .hearth-glow,.candle-halo {animation:glow-flicker 2.2s ease-in-out infinite alternate;}
         .room-resident[data-action="greet"] .resident-raised-hand{animation-duration:1.6s;}
         .room-resident[data-action="heart"] .resident-heart{animation-duration:calc(var(--motion-speed,.9s) * 3.1);}
-        .room-resident[data-action="sit"] .resident-pose{animation:sit-breathe 3.1s ease-in-out infinite;}
-        @keyframes sit-breathe {0%,20%,100%{transform:translateY(3px)}45%{transform:translateY(3.7px)}75%{transform:translateY(3.2px)}}
         @keyframes minime-wave {0%,100%{transform:rotate(-15deg) translateY(1px)}12%{transform:rotate(-5deg) translateY(0)}25%{transform:rotate(12deg) translateY(-1px)}38%{transform:rotate(-6deg)}51%{transform:rotate(16deg) translateY(-1px)}65%{transform:rotate(-7deg)}78%{transform:rotate(11deg)}90%{transform:rotate(-11deg)}}
         @keyframes minime-pop {0%,100%{opacity:.45;transform:translateY(0)}50%{opacity:1;transform:translateY(-2px)}}
         @keyframes minime-startle {0%,100%{transform:translateY(0)}35%{transform:translateY(-3px)}}
@@ -1141,7 +1117,7 @@ export default function App() {
         @keyframes room-twinkle { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
         @media (min-width: 1024px) { .room-stage { width:1000px;height:800px; } .room-pan-hint { display: none; } }
         @media (max-width: 639px) { .room-toolbar { gap: 6px; font-size: 10px; } .room-count { font-size: 9px; } .room-edit { padding: 2px 5px; font-size: 9px; } .room-caption { font-size: 8px; } .cyworld-font input[type=text], .cyworld-font input[type=password], .cyworld-font textarea { font-size: 16px; } .login-panel { padding: 16px; } .login-panel h2 { font-size: 18px; } .login-panel p { margin-bottom: 12px; } }
-        @media (prefers-reduced-motion: reduce) { .room-walker,.room-person,.room-light,.room-flame,.room-snow,.house-light,.fire-tongue,.candle-flame,.hearth-glow,.candle-halo,.resident-pose,.walk-upper,.walk-left-step,.walk-right-step,.resident-cup,.resident-raised-hand,.resident-heart,.resident-book,.resident-camera,.resident-flash { animation: none!important; } .room-resident[data-action="walk"] .resident-standing {display:block;} .room-resident[data-action="walk"] .resident-walking,.room-resident[data-action="sit"] .resident-raised-hand,.room-resident .resident-flash {display:none;} }
+        @media (prefers-reduced-motion: reduce) { .room-walker,.room-person,.room-light,.room-flame,.room-snow,.house-light,.fire-tongue,.candle-flame,.hearth-glow,.candle-halo,.resident-pose,.resident-raised-hand,.resident-heart,.resident-book,.resident-camera,.resident-flash,.motion-sheet-strip { animation:none!important; } .room-resident .resident-flash {display:none;} }
       `}} />
     </div>
   );
@@ -1246,6 +1222,10 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
       {crowdTest&&<div className="fixed inset-0 z-[80] bg-black/70 flex flex-col p-2 sm:p-5" role="dialog" aria-modal="true" aria-label="70명 미니룸 테스트">
         <div className="bg-white max-w-6xl w-full mx-auto rounded p-3 flex flex-col min-h-0 max-h-full overflow-y-auto custom-scrollbar">
           <div className="flex items-center justify-between gap-3 pb-2"><div><strong className="text-sm text-blue-800">🧪 가상 70명 동시 표시</strong><p className="text-[11px] text-slate-500">실제 서버 접속 부하 테스트가 아닌 휴대폰/PC 애니메이션 테스트입니다.</p></div><button onClick={()=>setCrowdTest(false)} className="bg-slate-800 text-white rounded px-4 py-2 text-sm font-bold shrink-0">테스트 종료 ✕</button></div>
+          <details className="mb-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 shrink-0">
+            <summary className="cursor-pointer text-sm font-bold text-amber-950">4프레임 동작 크게 보기</summary>
+            <MinimeMotionPreview />
+          </details>
           <ChristmasMiniroom profiles={demoCrowdProfiles} myName="" myMemberId="" onEdit={()=>{}} treePosts={[]} onTreeSave={()=>{}} onTreeDelete={()=>{}} demoMode />
         </div>
       </div>}
@@ -1404,6 +1384,31 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
 function SpriteDefinitions() {
   return <svg width="0" height="0" className="sprite-definitions" aria-hidden="true"><defs>{AVATAR_ATLASES.map((atlas,index)=><g key={index}><image id={`avatar-atlas-${index}`} href={atlas.url} width={atlas.width} height={atlas.height}/>{atlas.cells.map((cell,cellIndex)=><clipPath key={cellIndex} id={`avatar-clip-${index}-${cellIndex}`} clipPathUnits="userSpaceOnUse"><rect x={cell.x} y={cell.y} width={cell.w} height={cell.h}/></clipPath>)}</g>)}</defs></svg>;
 }
+const MINIME_POSES = {
+  'mini-01': { row: 0, kind: 'walk' },
+  'mini-06': { row: 1, kind: 'walk' },
+  'mini-03': { row: 2, kind: 'walk' },
+  'mini-04': { row: 3, kind: 'cup' },
+  'mini-08': { row: 4, kind: 'cup' },
+  'mini-09': { row: 5, kind: 'cup' },
+};
+
+function MinimeMotionSheet({ pose, x, y, size, className = '' }) {
+  return <svg x={x} y={y} width={size} height={size} viewBox="0 0 112 112"
+    className={`motion-sheet ${className}`} style={{'--pose-cycle':pose.kind==='walk'?'.84s':'2.8s'}} aria-hidden="true">
+    <image href={minimePoseAtlas} className="motion-sheet-strip" x="0" y={-112 * pose.row} width="448" height="672"/>
+  </svg>;
+}
+
+function MinimeMotionPreview() {
+  return <div className="grid grid-cols-3 gap-2 pt-2">
+    {Object.entries(MINIME_POSES).map(([id, pose])=><div key={id} className="flex flex-col items-center rounded bg-white py-1">
+      <MinimeMotionSheet pose={pose} size={72}/>
+      <span className="text-[11px] text-slate-600">{pose.kind==='walk'?'걷기':'앉아서 인사'}</span>
+    </div>)}
+  </div>;
+}
+
 function PixelCharacter({avatar='mini-01',className='',width,height}) {
   const id=resolveAvatar(avatar),index=AVATARS.indexOf(id),atlas=AVATAR_ATLASES[Math.floor(index/15)],cell=atlas.cells[index%15];
   return <svg width={width} height={height} viewBox={`${cell.x} ${cell.y} ${cell.w} ${cell.h}`} preserveAspectRatio="xMidYMax meet" className={`pixel-character ${className}`} shapeRendering="crispEdges" data-avatar={id} aria-hidden="true"><use href={`#avatar-atlas-${Math.floor(index/15)}`} clipPath={`url(#avatar-clip-${Math.floor(index/15)}-${index%15})`}/></svg>;
@@ -1480,7 +1485,7 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
         <svg ref={scene} viewBox="0 0 1000 650" className="room-scene connected-house" preserveAspectRatio="none" role="group" aria-label="1층과 2층을 계단으로 오가는 울장복 미니미들">
           <g className="room-background-layer" pointerEvents="none">
           <image href={ROOM_BACKGROUND} width="1000" height="650" preserveAspectRatio="none" pointerEvents="none"/>
-          <defs><radialGradient id="fire-warm-glow"><stop stopColor="#ffbd58" stopOpacity=".55"/><stop offset="1" stopColor="#ffae42" stopOpacity="0"/></radialGradient><clipPath id="walk-upper-clip"><rect x="-18" y="-42" width="36" height="33"/></clipPath><clipPath id="walk-left-clip"><rect x="-18" y="-11" width="18" height="14"/></clipPath><clipPath id="walk-right-clip"><rect x="0" y="-11" width="18" height="14"/></clipPath><clipPath id="resident-seated-clip"><rect x="-18" y="-42" width="36" height="33"/></clipPath></defs>
+          <defs><radialGradient id="fire-warm-glow"><stop stopColor="#ffbd58" stopOpacity=".55"/><stop offset="1" stopColor="#ffae42" stopOpacity="0"/></radialGradient></defs>
           <ellipse className="hearth-glow" cx="817" cy="425" rx="91" ry="64" fill="url(#fire-warm-glow)" pointerEvents="none"/>
           <g className="hearth-flames" transform="translate(818 438)" pointerEvents="none"><path className="fire-tongue" d="M-16 0Q-23-13-12-24Q-11-15-7-18Q-9-35 1-43Q-3-24 8-19Q9-28 13-30Q26-11 17 0Z" fill="#ff8d2588"/><path className="fire-tongue flame-inner" d="M-9 0Q-15-14-5-23Q-5-14 2-28Q6-19 8-15Q16-8 10 0Z" fill="#ffdf8799"/></g>
           {[[754,340],[765,345],[682,150],[361,152]].map(([x,y],index)=><g key={index} transform={`translate(${x} ${y})`} pointerEvents="none"><ellipse className="candle-halo" cy="-6" rx="13" ry="19" fill="url(#fire-warm-glow)" style={{animationDelay:`${index*.3}s`}}/><rect x="-1.5" y="-3" width="3" height="8" fill="#f2d9a2"/><path className="candle-flame" d="M0-12Q-4-6 0-4Q4-6 0-12" fill="#ffda78" style={{animationDelay:`${index*.3}s`}}/></g>)}
@@ -1495,23 +1500,16 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
           </g>
           {people.map((person,index)=>{
             const mine=person.name===myName;
-            const half=Math.ceil(people.length/2),rows=Math.ceil(half/14),floor=index%2,slot=Math.floor(index/2),col=slot%14,row=Math.floor(slot/14);
-            const staticX=(floor?225:320)+col*(floor?43:36),staticY=(floor?535:170)+row*((floor?48:30)/Math.max(1,rows-1));
+            const pose=MINIME_POSES[resolveAvatar(person.avatar)];
             const width=Math.min(138,Math.max(46,(person.nickname.length+(mine?3:0))*9));
-            return <g key={person.id} className={`room-resident ${selected===person.id?'is-selected':''}`} style={{'--motion-speed':`${.88+(index%7)*.045}s`}} data-member-id={person.id} data-stair-route="up-and-down" role="button" tabIndex={0} aria-label={`${person.nickname}의 미니미${mine?' (내 미니미)':''}`} aria-pressed={selected===person.id} onClick={()=>setSelected(selected===person.id?null:person.id)} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setSelected(selected===person.id?null:person.id);}}}>
+            return <g key={person.id} className={`room-resident ${selected===person.id?'is-selected':''}`} style={{'--motion-speed':`${.88+(index%7)*.045}s`}} data-member-id={person.id} data-poses={pose?.kind} data-stair-route="up-and-down" role="button" tabIndex={0} aria-label={`${person.nickname}의 미니미${mine?' (내 미니미)':''}`} aria-pressed={selected===person.id} onClick={()=>setSelected(selected===person.id?null:person.id)} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setSelected(selected===person.id?null:person.id);}}}>
               <title className="resident-status">산책 중</title>
               <g className="resident-visual" transform={`scale(${appearance.scale} ${appearance.scale*650/800})`}>
               <ellipse cx="0" cy="0" rx="10" ry="2.5" fill="#382b2366" pointerEvents="none"/>
-              <g className="resident-seat" pointerEvents="none"><rect x="-10" y="-6" width="20" height="4" rx="1" fill="#a2764c"/><path d="M-8-2V2M8-2V2" stroke="#694d39" strokeWidth="2"/></g>
               <g className="resident-pose" style={{animationDelay:`-${index*.37}s`}}>
-                <g className="resident-standing"><g className="resident-body" transform="translate(-14 -36)"><PixelCharacter avatar={person.avatar} className="world-avatar" width={28} height={36}/></g></g>
-                <g className="resident-walking">
-                  <g className="walk-upper" clipPath="url(#walk-upper-clip)"><g className="resident-body" transform="translate(-14 -36)"><PixelCharacter avatar={person.avatar} className="world-avatar" width={28} height={36}/></g></g>
-                  <g className="walk-left-step"><g clipPath="url(#walk-left-clip)"><g className="resident-body" transform="translate(-14 -36)"><PixelCharacter avatar={person.avatar} className="world-avatar" width={28} height={36}/></g></g></g>
-                  <g className="walk-right-step"><g clipPath="url(#walk-right-clip)"><g className="resident-body" transform="translate(-14 -36)"><PixelCharacter avatar={person.avatar} className="world-avatar" width={28} height={36}/></g></g></g>
-                </g>
+                <g className="resident-body" transform="translate(-14 -36)"><PixelCharacter avatar={person.avatar} className="world-avatar" width={28} height={36}/></g>
               </g>
-              <g className="resident-seated-feet" pointerEvents="none"><path d="M-6-6V0H-1M5-6V0H10" stroke="#554d48" strokeWidth="4" fill="none"/></g>
+              {pose&&<MinimeMotionSheet pose={pose} x={-18} y={-36} size={36} className="resident-sheet"/>}
               <g className="resident-raised-hand" pointerEvents="none"><path d="M11-20L15-26L15-31" stroke="#e3c9a5" strokeWidth="3" fill="none"/><rect x="12" y="-35" width="6" height="6" rx="1" fill="#fff1d6"/></g>
               <g className="resident-heart" pointerEvents="none"><text x="0" y="-39" textAnchor="middle" fontSize="15" fill="#ff6c8d">♥</text></g>
               <g className="resident-surprise" pointerEvents="none"><text x="0" y="-40" textAnchor="middle" fontSize="15" fontWeight="bold" fill="#ffe697" stroke="#76554a" strokeWidth=".5">!</text></g>
@@ -1519,12 +1517,7 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
               <g className="resident-camera" pointerEvents="none"><rect x="-8" y="-22" width="16" height="11" rx="2" fill="#44566c" stroke="#e2eaf0" strokeWidth="1"/><circle cx="0" cy="-16" r="4" fill="#a7d7ee"/><rect x="-5" y="-25" width="7" height="3" rx="1" fill="#44566c"/></g>
               <g className="resident-flash" pointerEvents="none"><path d="M-3-30L0-38L3-30L11-30L5-25L7-18L0-22L-7-18L-5-25L-11-30Z" fill="#ffefa6" stroke="#ffffff" strokeWidth="1"/></g>
               <g className="resident-book" pointerEvents="none"><path d="M-10-20Q-4-22 0-18Q4-22 10-20V-10Q4-12 0-8Q-4-12-10-10Z" fill="#f4e5b8" stroke="#865f4a" strokeWidth="1"/><path d="M0-18V-8M-7-17L-3-16M3-16L7-17" stroke="#af8c62" strokeWidth=".7"/></g>
-              <g className="resident-cup" pointerEvents="none">
-                <path d="M4-17H6Q9-17 8-14Q7-12 4-13" fill="none" stroke="#ffe8cd" strokeWidth="1.4"/>
-                <rect x="-4" y="-18" width="9" height="8" rx="2" fill="#af4449" stroke="#5a3631" strokeWidth=".7"/>
-                <ellipse cy="-18" rx="4" ry="1.1" fill="#f4dbc0"/>
-                <circle cx="-4.5" cy="-14" r="1.7" fill="#e8ba94"/>
-              </g>
+              <g className="resident-rest-cup" pointerEvents="none"><rect x="-4" y="-17" width="8" height="6" rx="1.5" fill="#b34b54" stroke="#fff1da" strokeWidth=".8"/></g>
               <g className="resident-admire" pointerEvents="none"><text x="0" y="-40" textAnchor="middle" fontSize="11" fill="#fff0b0">✧ ✧</text></g>
               <rect x="-14" y="-37" width="28" height="39" fill="transparent" className="resident-hit"/>
               {mine&&<path d="M-3 4H3L0 7Z" fill="#5bac83" pointerEvents="none"/>}
