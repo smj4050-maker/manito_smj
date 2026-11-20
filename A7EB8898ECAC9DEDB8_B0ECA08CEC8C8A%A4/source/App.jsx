@@ -2,7 +2,7 @@ import minimePoseAtlas from './minime-motion-poses.js';
 import { createCrowd, stepCrowd, poseFrame, ACTION_LABELS, getCrowdAppearance, isRoomVisible } from './house-motion.mjs';
 import { ROOM_BACKGROUND, BARE_TREE } from './room-background.js';
 import { AVATAR_ATLASES } from './avatars.js';
-import React, { useState, useEffect, useRef, useId } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithEmailAndPassword, createUserWithEmailAndPassword, linkWithCredential, EmailAuthProvider, onAuthStateChanged, signOut } from 'firebase/auth';
 import { getFirestore, doc, collection, query, orderBy, limit, onSnapshot, getDoc, getDocFromServer, runTransaction, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
@@ -336,9 +336,8 @@ export default function App() {
     if (!user || user.isAnonymous || isAdmin) { setSessionReady(true); return; }
     if(approvedSession.current?.uid===user.uid){setSession(approvedSession.current.data);setSessionReady(true);}
     return onSnapshot(accountDoc(user.uid), { includeMetadataChanges: true }, snapshot => {
-      if (snapshot.metadata.hasPendingWrites) return;
-      if(!snapshot.exists()&&approvedSession.current?.uid===user.uid){setSession(approvedSession.current.data);setSessionReady(true);return;}
-      if(snapshot.exists())approvedSession.current=null;
+      if (snapshot.metadata.hasPendingWrites || snapshot.metadata.fromCache) return;
+      approvedSession.current=null;
       setSession(snapshot.exists() ? snapshot.data() : null); setSessionReady(true);
     },
       error => { setSessionReady(true); fail(error); });
@@ -347,7 +346,7 @@ export default function App() {
   useEffect(() => {
     setAssignment(null); setAssignmentReady(false);
     if (!user || isAdmin || !session?.inviteId) { setAssignmentReady(true); return; }
-    return onSnapshot(inviteDoc(session.inviteId), snapshot => { setAssignment(snapshot.exists() ? snapshot.data() : null); setAssignmentReady(true); },
+    return onSnapshot(inviteDoc(session.inviteId), {includeMetadataChanges:true}, snapshot => { if(snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites)return; setAssignment(snapshot.exists() ? snapshot.data() : null); setAssignmentReady(true); },
       error => { setAssignmentReady(true); setAssignment(null); fail(error); });
   }, [user?.uid, isAdmin, session?.inviteId]);
 
@@ -369,7 +368,8 @@ export default function App() {
 
   useEffect(()=>{
     if(!isLoggedIn){roomEntryAttempt.current='';return;}
-    if(!profilesReady||!hasProfile(profiles[myName]))return;
+    if(!profilesReady)return;
+    if(!hasProfile(profiles[myName])){roomEntryAttempt.current='';return;}
     const key=`${user.uid}:${assignment.memberId}`;
     if(roomEntryAttempt.current===key)return;
     roomEntryAttempt.current=key;
@@ -499,12 +499,13 @@ export default function App() {
         const old = oldMembers.find(item => item.id === member.id);
         const oldLogin = oldLogins.get(member.id)?.data;
         const rotated = !old || old.inviteId !== member.inviteId;
+        const targetName = revealSnap.data()?.pairs?.[member.name] || '';
+        const target = normalized.find(item => item.name === targetName);
         let assignmentData = {};
-        if (changed) assignmentData = { targetId: '', targetName: '', roundId: '' };
-        else if (rotated && old) {
-          // 초기화 대상의 배정만 새 계정에 옮깁니다. 이미 읽은 관리자 배정표를 사용합니다.
-          const targetName = revealSnap.exists() ? revealSnap.data().pairs?.[member.name] || '' : '';
-          assignmentData = { targetName, targetId: normalized.find(m => m.name === targetName)?.id || '', roundId };
+        if (changed) assignmentData = { targetId: '', targetName: '', targetDepartment: '', roundId: '' };
+        else if (target && current.hasDraw) {
+          assignmentData = { targetDepartment: target.department };
+          if (rotated) Object.assign(assignmentData, { targetId: target.id, targetName: target.name, roundId });
         }
         transaction.set(inviteDoc(member.inviteId), { memberId: member.id, name: member.name, active: true, ...assignmentData }, { merge: true });
         transaction.set(loginDoc(member.nameKey), { name: member.name, memberId: member.id, inviteId: member.inviteId,
@@ -538,7 +539,6 @@ export default function App() {
   },true);
   const handleResetAllMinimes=()=>runAction('admin-bulk-minime',async()=>{
     if(!members.length)throw new Error('초기화할 구성원이 없습니다.');
-    if(window.prompt(`전체 ${members.length}명의 미니미·별명을 초기화합니다. 마니또 배정과 로그인 번호, 선물 준비 현황은 유지됩니다. 진행하려면 '전체미니미초기화'를 입력하세요.`)!=='전체미니미초기화')return false;
     await runTransaction(db,async transaction=>{
       const configSnap=await transaction.get(dataDoc('settings_config'));
       if(configSnap.exists()&&configSnap.data().roundId!==roundId)throw new Error('배정 회차가 변경되었습니다. 새로고침 후 다시 진행해주세요.');
@@ -553,7 +553,6 @@ export default function App() {
   const handleResetAllPins=()=>runAction('admin-bulk-pin',async()=>{
     if(!members.length)throw new Error('초기화할 구성원이 없습니다.');
     if(members.length>90)throw new Error('전체 번호 초기화는 한 번에 최대 90명까지 지원합니다.');
-    if(window.prompt(`전체 ${members.length}명의 4자리 번호를 초기화합니다. 기존 번호로 다시 로그인할 수 없으며 전원이 '처음 등록'을 해야 합니다. 마니또 배정은 유지됩니다. 진행하려면 '전체비밀번호초기화'를 입력하세요.`)!=='전체비밀번호초기화')return false;
     await saveMembers(members,new Set(members.map(member=>member.id)));
     showModal('전체 비밀번호 초기화 완료',`${members.length}명의 번호를 초기화했습니다. 모두 공통 주소에서 '처음 등록'으로 새 4자리 번호를 정해주세요.`);
   },true);
@@ -565,6 +564,37 @@ export default function App() {
     migrationAttempt.current = key;
     handleUpdateMembers(members);
   }, [isAdmin, membersReady, configReady, members]);
+
+  const departmentSyncRound = useRef('');
+  useEffect(() => {
+    if (!isAdmin || !membersReady || !configReady || !publicConfig.hasDraw || !roundId || !members.length) return;
+    if (departmentSyncRound.current === roundId) return;
+    departmentSyncRound.current = roundId;
+    runTransaction(db, async transaction => {
+      const [configSnap, membersSnap] = await Promise.all([
+        transaction.get(dataDoc('settings_config')),
+        transaction.get(dataDoc('settings_members'))
+      ]);
+      const current = configSnap.data();
+      if (!current?.hasDraw || current.roundId !== roundId) return;
+      const roster = membersSnap.data()?.list || [];
+      const byId = new Map(roster.map(member => [member.id, member]));
+      const invitations = await Promise.all(roster.filter(member => member.inviteId)
+        .map(member => transaction.get(inviteDoc(member.inviteId))));
+      for (const invitation of invitations) {
+        const data = invitation.data();
+        if (!data?.active || data.roundId !== roundId) continue;
+        const target = byId.get(data.targetId) || roster.find(member => member.name === data.targetName);
+        const department = String(target?.department || '').trim();
+        if (department && data.targetDepartment !== department) {
+          transaction.update(invitation.ref, { targetDepartment: department });
+        }
+      }
+    }).catch(error => {
+      if (departmentSyncRound.current === roundId) departmentSyncRound.current = '';
+      fail(error);
+    });
+  }, [isAdmin, membersReady, configReady, publicConfig.hasDraw, roundId, members]);
 
   const handleAdminSetup = async () => runAction('admin', async () => {
     if (members.some(m => !m.nameKey || !m.loginEmail)) throw new Error('명단의 로그인 설정 중입니다. 잠시 후 다시 눌러주세요.');
@@ -586,7 +616,7 @@ export default function App() {
       if (rosterFingerprint(currentMembers) !== rosterFingerprint(members) || (current.roundId || '') !== roundId) throw new Error('명단이나 배정이 변경되었습니다. 최신 상태에서 다시 실행해주세요.');
       for (let i = 0; i < shuffled.length; i++) {
         const member = shuffled[i], target = shuffled[(i + 1) % shuffled.length];
-        transaction.set(inviteDoc(member.inviteId), { memberId: member.id, name: member.name, active: true, targetId: target.id, targetName: target.name, roundId: newRoundId });
+        transaction.set(inviteDoc(member.inviteId), { memberId: member.id, name: member.name, active: true, targetId: target.id, targetName: target.name, targetDepartment: target.department, roundId: newRoundId });
         transaction.set(profileDoc(member.id), { name: member.name, giftSubmitted: false, giftRoundId: newRoundId }, { merge: true });
       }
       transaction.set(dataDoc('settings_members'), { list: normalized });
@@ -602,7 +632,7 @@ export default function App() {
     if (!/^\d{4}$/.test(pin)) throw new Error('번호는 숫자 4자리로 입력해주세요.');
     if (registering && pin !== confirmation) throw new Error('두 번 입력한 번호가 다릅니다. 다시 확인해주세요.');
     if (!publicConfig.hasDraw) throw new Error('아직 방장이 마니또 설정을 완료하지 않았습니다. 기다려주세요!');
-    const nameKey = await hashToken(cleanName), lookup = await getDoc(loginDoc(nameKey));
+    const nameKey = await hashToken(cleanName), lookup = await getDocFromServer(loginDoc(nameKey));
     if (!lookup.exists() || lookup.data().name !== cleanName) throw new Error('등록된 직원 이름이 아닙니다. 이름을 확인하거나 방장에게 문의해주세요.');
     const directory = lookup.data();
     let establishedAccount;
@@ -858,7 +888,8 @@ export default function App() {
                 myMemberId={assignment?.memberId}
                 incomingReadAt={readState.guestbookAt} onOpenIncoming={()=>{setGuestbookIncoming(true);setActiveTab('guestbook');}}
                 treePosts={treePosts} onTreeSave={handleTreeSave} onTreeDelete={handleTreeDelete} 
-                target={getMyTarget()} 
+                target={getMyTarget()}
+                targetDepartment={assignment?.targetDepartment}
                 mySanta={getMySanta()}
                 pairs={config?.pairs}
                 isRevealed={config?.isRevealed}
@@ -1083,6 +1114,19 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
   const [singleName, setSingleName] = useState('');
   const [singleDept, setSingleDept] = useState('');
   const [editId, setEditId] = useState(null);
+  const [bulkReset,setBulkReset]=useState(null);
+  const [resetText,setResetText]=useState('');
+  const [resetBusy,setResetBusy]=useState(false);
+  const resetPhrase=bulkReset==='pins'?'전체비밀번호초기화':'전체미니미초기화';
+  const beginBulkReset=kind=>{setResetText('');setBulkReset(kind);};
+  const confirmBulkReset=async()=>{
+    if(!bulkReset||resetBusy||resetText.trim()!==resetPhrase)return;
+    setResetBusy(true);
+    try {
+      const reset=bulkReset==='pins'?onResetAllPins:onResetAllMinimes;
+      if(await reset())setBulkReset(null);
+    } finally {setResetBusy(false);}
+  };
   const [crowdTest, setCrowdTest] = useState(false);
   const [demoCrowdProfiles,setDemoCrowdProfiles] = useState(buildDemoCrowdProfiles);
   
@@ -1193,11 +1237,30 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
         <p className="text-sm font-extrabold text-amber-900 mb-1">⚠️ 전체 초기화 · 방장 전용</p>
         <p className="text-xs text-amber-800 mb-3">초기화 전 입력 확인이 필요합니다. 마니또 배정과 선물 준비 현황은 유지됩니다.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <button type="button" onClick={onResetAllMinimes} className="rounded border border-orange-400 bg-white text-orange-800 font-bold px-3 py-3 text-sm hover:bg-orange-100">🎨 전체 미니미 초기화</button>
-          <button type="button" onClick={onResetAllPins} className="rounded border border-red-400 bg-white text-red-700 font-bold px-3 py-3 text-sm hover:bg-red-100">🔑 전체 비밀번호 초기화</button>
+          <button type="button" onClick={()=>beginBulkReset('minimes')} className="rounded border border-orange-400 bg-white text-orange-800 font-bold px-3 py-3 text-sm hover:bg-orange-100">🎨 전체 미니미 초기화</button>
+          <button type="button" onClick={()=>beginBulkReset('pins')} className="rounded border border-red-400 bg-white text-red-700 font-bold px-3 py-3 text-sm hover:bg-red-100">🔑 전체 비밀번호 초기화</button>
         </div>
         <p className="text-[11px] text-amber-900 mt-2">전체 비밀번호 초기화 시 모든 직원이 '처음 등록'을 통해 4자리 번호를 다시 설정해야 합니다.</p>
       </section>
+
+      {bulkReset&&<div className="fixed inset-0 z-[70] bg-black/60 grid place-items-center p-4">
+        <form className="w-full max-w-sm rounded bg-white p-4" role="dialog" aria-modal="true" aria-labelledby="bulk-reset-heading"
+          onSubmit={event=>{event.preventDefault();confirmBulkReset();}}>
+          <h3 id="bulk-reset-heading" className="font-bold text-red-800">{bulkReset==='pins'?'전체 비밀번호 초기화':'전체 미니미 초기화'}</h3>
+          <p className="my-2 text-sm text-slate-700">{bulkReset==='pins'
+            ? `${members.length}명의 기존 로그인 연결이 해제됩니다. 각자 ‘처음 등록’에서 번호를 다시 정해야 합니다.`
+            : `${members.length}명의 미니미와 별명이 지워집니다. 기존 번호로 입장하면 캐릭터와 별명을 다시 고릅니다.`}</p>
+          <label className="block text-sm">확인 문구 <strong>{resetPhrase}</strong>
+            <input autoFocus autoComplete="off" value={resetText} onChange={event=>setResetText(event.target.value)}
+              className="my-2 block w-full border border-slate-300 rounded p-2" disabled={resetBusy}/>
+          </label>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={()=>setBulkReset(null)} disabled={resetBusy} className="border rounded px-3 py-2">취소</button>
+            <button type="submit" disabled={resetText.trim()!==resetPhrase||resetBusy}
+              className="rounded bg-red-700 text-white px-3 py-2 disabled:opacity-40">{resetBusy?'처리 중…':'초기화 실행'}</button>
+          </div>
+        </form>
+      </div>}
 
       {/* 입력 폼 영역 */}
       {showBulkAdd && (
@@ -1327,12 +1390,12 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
 function SpriteDefinitions() {
   return <svg width="0" height="0" className="sprite-definitions" aria-hidden="true"><defs>{AVATAR_ATLASES.map((atlas,index)=><g key={index}><image id={`avatar-atlas-${index}`} href={atlas.url} width={atlas.width} height={atlas.height}/>{atlas.cells.map((cell,cellIndex)=><clipPath key={cellIndex} id={`avatar-clip-${index}-${cellIndex}`} clipPathUnits="userSpaceOnUse"><rect x={cell.x} y={cell.y} width={cell.w} height={cell.h}/></clipPath>)}</g>)}</defs></svg>;
 }
-function MinimeMotionSheet({ avatar, action, x, y, size, live = false }) {
+function MinimeMotionSheet({ avatar, action, size }) {
   const row=AVATARS.indexOf(resolveAvatar(avatar));
   const walking=action==='walk';
-  return <svg x={x} y={y} width={size} height={size} viewBox="0 0 96 96"
-    className="motion-sheet" style={{'--pose-cycle':walking?'.84s':'2.8s'}} aria-hidden="true">
-    <image href={minimePoseAtlas} className={live?undefined:'motion-sheet-strip'}
+  return <svg width={size} height={size} viewBox="0 0 96 96"
+    className="motion-sheet" style={{'--pose-cycle':walking?'1.08s':'4.2s'}} aria-hidden="true">
+    <image href={minimePoseAtlas} className="motion-sheet-strip"
       x={walking?0:-384} y={-96*row} width="768" height="2880"/>
   </svg>;
 }
@@ -1382,24 +1445,43 @@ function ProfileSetupView({onSetup,initialProfile,onCancel}) {
   </div>;
 }
 function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSave,onTreeDelete,demoMode=false}) {
-  const treeMaskId=`minime-tree-mask-${useId().replace(/[^a-zA-Z0-9_-]/g,'')}`;
-  const treeMaskFilterId=`${treeMaskId}-silhouette`;
   const [selected,setSelected]=useState(null),[expanded,setExpanded]=useState(false),[treeOpen,setTreeOpen]=useState(false),[selectedNote,setSelectedNote]=useState(null);
-  const [reducedMotion,setReducedMotion]=useState(()=>window.matchMedia?.('(prefers-reduced-motion: reduce)').matches||false);
-  const scroller=useRef(null),scene=useRef(null),crowd=useRef(null);
+  const [systemReducedMotion,setSystemReducedMotion]=useState(()=>window.matchMedia?.('(prefers-reduced-motion: reduce)').matches||false);
+  const [playMotion,setPlayMotion]=useState(false);
+  const reducedMotion=systemReducedMotion&&!playMotion;
+  const scroller=useRef(null),scene=useRef(null),crowd=useRef(null),crowdCanvas=useRef(null);
   const [roomNow,setRoomNow]=useState(Date.now);
   const people=Object.entries(profiles||{}).filter(([,p])=>p._hasMinime===true&&isRoomVisible(p,roomNow)).map(([name,p])=>({...p,name,id:p._memberId||name})).sort((a,b)=>a.id.localeCompare(b.id));
   const appearance=getCrowdAppearance(people.length);
+  const canvasMode=people.length>0;
+  const crowdSignature=people.map(person=>`${person.id}:${person.avatar}`).join('|');
   useEffect(()=>{const refresh=()=>setRoomNow(Date.now()),timer=setInterval(refresh,10000);window.addEventListener('focus',refresh);return()=>{clearInterval(timer);window.removeEventListener('focus',refresh);};},[]);
   const notes=[...treePosts].sort((a,b)=>a.memberId.localeCompare(b.memberId));
   useEffect(()=>{const el=scroller.current;if(el)el.scrollLeft=(el.scrollWidth-el.clientWidth)/2;},[expanded]);
-  useEffect(()=>{const query=window.matchMedia?.('(prefers-reduced-motion: reduce)');if(!query)return;const changed=()=>setReducedMotion(query.matches);query.addEventListener?.('change',changed);return()=>query.removeEventListener?.('change',changed);},[]);
+  useEffect(()=>{const query=window.matchMedia?.('(prefers-reduced-motion: reduce)');if(!query)return;const changed=()=>setSystemReducedMotion(query.matches);query.addEventListener?.('change',changed);return()=>query.removeEventListener?.('change',changed);},[]);
   useEffect(()=>{
     const svg=scene.current,stage=svg?.querySelector('.house-depth-stage');if(!stage)return;
     const residents=Array.from(stage.querySelectorAll('.room-resident')),ids=residents.map(node=>node.dataset.memberId);
     const signature=[...ids].sort().join('|');
     if(!crowd.current||crowd.current.signature!==signature){crowd.current=createCrowd(ids);crowd.current.signature=signature;}
     const world=crowd.current,byId=new Map(world.agents.map(person=>[person.id,person]));
+    const context=crowdCanvas.current?.getContext('2d');
+    const atlas=context?new Image():null,tree=context?new Image():null;
+    if(atlas){atlas.src=minimePoseAtlas;tree.src=BARE_TREE;}
+    const sprites=new Map(people.map(person=>[person.id,AVATARS.indexOf(resolveAvatar(person.avatar))]));
+    const drawSprite=person=>{
+      const offset=(person.action==='sit'?4:0)+(reducedMotion?0:poseFrame(person.action,world.time-person.actionStarted,person.tempo));
+      const width=44*appearance.scale,height=width*650/800;
+      const mirror=person.action==='walk'&&person.facing===-1;
+      if(mirror){
+        context.save();
+        context.translate(person.x*2,0);
+        context.scale(-1,1);
+      }
+      context.drawImage(atlas,offset*96,sprites.get(person.id)*96,96,96,
+        person.x-width/2,person.y-height*41/44,width,height);
+      if(mirror)context.restore();
+    };
     let frame,last=performance.now(),painted=-Infinity;
     const interval=ids.length>=55?65:ids.length>=35?50:40;
     const draw=now=>{
@@ -1407,19 +1489,19 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
       if(now-painted>=interval){
         stepCrowd(world,Math.min(.1,(now-last)/1000));
         last=now;painted=now;svg.dataset.motionTime=String(world.time);
+        if(context&&atlas.naturalWidth){
+          context.clearRect(0,0,1000,650);
+          const ordered=[...world.agents].sort((a,b)=>a.y-b.y);
+          for(const person of ordered)if(person.y<482)drawSprite(person);
+          context.globalCompositeOperation='destination-out';
+          if(tree.naturalWidth)context.drawImage(tree,355,240,290,250);
+          context.globalCompositeOperation='source-over';
+          for(const person of ordered)if(person.y>=482)drawSprite(person);
+        }
         residents.forEach(node=>{
           const person=byId.get(node.dataset.memberId);if(!person)return;
           node.setAttribute('transform',`translate(${person.x.toFixed(2)} ${person.y.toFixed(2)})`);
-          const layer=node.parentElement;
-          const behindTree=person.y>=240&&person.y<482&&person.x>=300&&person.x<=700;
-          if(behindTree&&!layer.hasAttribute('mask'))layer.setAttribute('mask',`url(#${treeMaskId})`);
-          if(!behindTree&&layer.hasAttribute('mask'))layer.removeAttribute('mask');
-          const {action,actionStarted}=person;
-          const frameIndex=reducedMotion?0:poseFrame(action,world.time-actionStarted);
-          const offset=(action==='sit'?4:0)+frameIndex;
-          const sprite=node.querySelector('.motion-sheet');
-          const viewport=`${offset*96} 0 96 96`;
-          if(sprite.getAttribute('viewBox')!==viewport)sprite.setAttribute('viewBox',viewport);
+          const action=person.action;
           if(node.dataset.action!==action){node.dataset.action=action;node.querySelector('.resident-status').textContent=ACTION_LABELS[action];}
         });
 
@@ -1427,7 +1509,7 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
       frame=requestAnimationFrame(draw);
     };
     draw(performance.now());return()=>cancelAnimationFrame(frame);
-  },[people.map(person=>person.id).join('|'),reducedMotion]);
+  },[crowdSignature,reducedMotion,canvasMode]);
   const ornamentPoint=index=>{
     let row=0,slot=index;while(slot>=row+2){slot-=row+2;row++;}
     const rows=Math.max(11,Math.ceil((-3+Math.sqrt(9+8*notes.length))/2)),span=12+row*88/(rows-1);
@@ -1439,15 +1521,6 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
     <div className="room-scroll custom-scrollbar" ref={scroller} tabIndex={0} aria-label="계단으로 연결된 크리스마스 나무집">
       <div className="room-stage">
         <svg ref={scene} viewBox="0 0 1000 650" className="room-scene connected-house" preserveAspectRatio="none" role="group" aria-label="1층과 2층을 계단으로 오가는 울장복 미니미들">
-          <defs>
-            <filter id={treeMaskFilterId} colorInterpolationFilters="sRGB">
-              <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
-            </filter>
-            <mask id={treeMaskId} maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="1000" height="650" style={{maskType:'luminance'}}>
-              <rect width="1000" height="650" fill="white"/>
-              <image href={BARE_TREE} x="355" y="240" width="290" height="250" preserveAspectRatio="none" filter={`url(#${treeMaskFilterId})`}/>
-            </mask>
-          </defs>
           <g className="room-background-layer" pointerEvents="none">
           <image href={ROOM_BACKGROUND} width="1000" height="650" preserveAspectRatio="none" pointerEvents="none"/>
           <defs><radialGradient id="fire-warm-glow"><stop stopColor="#ffbd58" stopOpacity=".55"/><stop offset="1" stopColor="#ffae42" stopOpacity="0"/></radialGradient></defs>
@@ -1477,8 +1550,6 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
             return <g key={person.id}><g className={`room-resident ${selected===person.id?'is-selected':''}`} data-member-id={person.id} data-stair-route="up-and-down" role="button" tabIndex={0} aria-label={`${person.nickname}의 미니미${mine?' (내 미니미)':''}`} aria-pressed={selected===person.id} onClick={()=>setSelected(selected===person.id?null:person.id)} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setSelected(selected===person.id?null:person.id);}}}>
               <title className="resident-status">산책 중</title>
               <g className="resident-visual" transform={`scale(${appearance.scale} ${appearance.scale*650/800})`}>
-              <ellipse cx="0" cy="0" rx="10" ry="2.5" fill="#382b2366" pointerEvents="none"/>
-              <MinimeMotionSheet avatar={person.avatar} action="walk" x={-22} y={-41} size={44} live/>
               <rect x="-14" y="-37" width="28" height="39" fill="transparent" className="resident-hit"/>
               {mine&&<path d="M-3 4H3L0 7Z" fill="#5bac83" pointerEvents="none"/>}
               </g>
@@ -1487,9 +1558,12 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
           })}
           </g>
         </svg>
+        {canvasMode&&<canvas ref={crowdCanvas} aria-hidden="true" width={1000} height={650} className="absolute inset-0 w-full h-full pointer-events-none"/>}
         {notes.map((note,index)=>{const point=ornamentPoint(index);return <button key={note.memberId} type="button" className="tree-note-hit" aria-label={`${note.nickname}님의 트리 장식`} style={{left:`${point.x/10}%`,top:`${point.y/6.5}%`}} onClick={()=>setSelectedNote(note)}/>;})}
       </div>
     </div>
+    {systemReducedMotion&&<button type="button" className="room-edit m-2" aria-pressed={playMotion}
+      onClick={()=>setPlayMotion(value=>!value)}>{playMotion?'미니미 모션 끄기':'미니미 모션 켜기'}</button>}
     <div className="room-caption"><span>로그인 후 2시간 동안 함께해요</span><span>{expanded?'↔ 좌우로 밀어보세요':'걷고 쉬고, 인사하며 함께 지내요'}</span></div>
     {treeOpen&&<TreeBoard posts={treePosts} myMemberId={myMemberId} onSave={onTreeSave} onDelete={onTreeDelete} onClose={()=>setTreeOpen(false)}/>}
     {selectedNote&&<div className="fixed inset-0 bg-black/40 z-40 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="트리 한마디 보기"><div className="w-full max-w-xs bg-[#fffaf0] border-2 border-[#b38d70] p-5 rounded"><h3 className="text-sm font-bold text-green-800 mb-3">🎄 {selectedNote.nickname}님의 크리스마스 한마디</h3><p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{selectedNote.message}</p><button onClick={()=>setSelectedNote(null)} className="w-full mt-4 text-xs border border-[#d7bda0] bg-white py-2">닫기</button></div></div>}
@@ -1603,7 +1677,7 @@ function DrawView({ target, stage, onStart, onNext, profiles }) {
   );
 }
 
-function DashboardView({ myName, myMemberId,incomingReadAt,onOpenIncoming,treePosts,onTreeSave,onTreeDelete,target, mySanta, isRevealed, events, onEditProfile, onActivity, onOpenMessage, onGiftSubmit, profiles, pairs }) {
+function DashboardView({ myName, myMemberId,incomingReadAt,onOpenIncoming,treePosts,onTreeSave,onTreeDelete,target,targetDepartment, mySanta, isRevealed, events, onEditProfile, onActivity, onOpenMessage, onGiftSubmit, profiles, pairs }) {
   const myProfile = profiles?.[myName] || { nickname: myName, avatar: '🎅' };
   const targetProfile = profiles?.[target] || { nickname: target, avatar: '👤' };
   const [giftEnabled,setGiftEnabled]=useState(giftOpens);
@@ -1622,10 +1696,13 @@ function DashboardView({ myName, myMemberId,incomingReadAt,onOpenIncoming,treePo
         <div className="text-[10px] font-bold text-blue-600 mb-1 flex items-center">
           <Heart size={10} className="mr-1 fill-blue-600" /> 내가 챙길 사람
         </div>
-        <div className="flex justify-between items-center mb-2">
-          <div className="text-sm sm:text-base font-bold text-slate-800 flex items-center">
+        <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
+          <div className="text-sm sm:text-base font-bold text-slate-800 flex items-center min-w-0">
             <PixelCharacter avatar={targetProfile.avatar} className="target-avatar mr-2"/>
-            {target} <span className="text-[10px] sm:text-xs font-normal text-slate-500 ml-1">({targetProfile.nickname})</span>
+            <div className="min-w-0">
+              {targetDepartment && targetDepartment!=='미분류' && <div className="text-[11px] font-semibold text-blue-700 break-words">{targetDepartment}</div>}
+              <div className="break-words">{target} <span className="text-[10px] sm:text-xs font-normal text-slate-500">({targetProfile.nickname})</span></div>
+            </div>
           </div>
           <div className="flex space-x-1 sm:space-x-2">
             <button onClick={onActivity} className="bg-orange-100 text-orange-700 font-bold px-4 py-2.5 min-h-11 text-sm border border-orange-300 rounded hover:bg-orange-200 flex items-center justify-center" title="자리에 몰래 선물을 두고 왔을 때 누르세요!">
