@@ -6,7 +6,7 @@ export function getCrowdAppearance(count){
  if(count<=40)return {scale:1.55,gap:{x:44,y:44}};
  return {scale:1.4,gap:{...CROWD_GAP}};
 }
-export const ACTION_LABELS={walk:'산책 중',rest:'잠깐 쉬기',sit:'앉아서 쉬기',wave:'손 흔들기',heart:'하트 보내기',surprise:'깜짝!',greet:'서로 인사하기',prank:'친구에게 장난치기',warm:'불 쬐기',read:'책 읽기',admire:'트리 구경하기'};
+export const ACTION_LABELS={walk:'산책 중',rest:'잠깐 쉬기',sit:'앉아서 쉬기',wave:'손 흔들기',heart:'하트 보내기',surprise:'깜짝!',greet:'서로 인사하기',prank:'친구에게 장난치기',photo:'사진 찍기',warm:'불 쬐기',read:'책 읽기',admire:'트리 구경하기'};
 export function roomSeed(id){return [...id].reduce((v,c)=>(v*31+c.charCodeAt(0))>>>0,7);}
 export function makeHouseRoute(id,index,count){
  const value=roomSeed(id),lane=index%2,upper=[335+value%460,161+lane*40];
@@ -25,11 +25,11 @@ export function sampleHouseRoute(route,phase){
 export const overlaps=(a,b,gap=CROWD_GAP)=>Math.abs(a.x-b.x)<gap.x&&Math.abs(a.y-b.y)<gap.y;
 const stairs=a=>a.x<318&&a.y>214&&a.y<510;
 const random=a=>{a.seed=(Math.imul(a.seed,1664525)+1013904223)>>>0;return a.seed/4294967296;};
-function setAction(a,kind,time,duration,partner=null){a.action=kind;a.until=time+duration;a.partner=partner;a.nextAction=a.until+6+random(a)*14;}
+function setAction(a,kind,time,duration,partner=null){a.action=kind;a.until=time+duration;a.partner=partner;a.nextAction=a.until+2+random(a)*5;}
 export function createCrowd(ids){
  const agents=[],appearance=getCrowdAppearance(ids.length),gap=appearance.gap;
  ids.forEach((id,index)=>{
-  const route=makeHouseRoute(id,index,ids.length),a={id,route,phase:route.phase,seed:roomSeed(id),action:'walk',until:0,partner:null,nextAction:2+index%13+roomSeed(id)%7,blocked:0};
+  const route=makeHouseRoute(id,index,ids.length),a={id,route,phase:route.phase,seed:roomSeed(id),action:'walk',until:0,partner:null,nextAction:1+(index%7)*.75,blocked:0};
   let found=false;
   for(let attempt=0;attempt<2200;attempt++){
    const phase=(route.phase+attempt*.61803398875)%1,p=sampleHouseRoute(route,phase);
@@ -50,38 +50,35 @@ export function stepCrowd(world,dt){
   if(a.action!=='walk'&&time>=a.until){a.action='walk';a.partner=null;}
   if(a.action!=='walk'||time<a.nextAction||stairs(a))continue;
   const chance=random(a);
-  if(a.y>420&&Math.hypot(a.x-792,a.y-465)<66&&chance<.8){setAction(a,'warm',time,7+random(a)*5);continue;}
-  if(((a.y<220&&a.x>650&&a.x<770)||(a.y>420&&a.y<485&&a.x>665&&a.x<745))&&chance<.8){setAction(a,'read',time,7+random(a)*5);continue;}
-  if(a.y>495&&a.y<555&&a.x>365&&a.x<635&&chance<.75){setAction(a,'admire',time,4+random(a)*5);continue;}
+  if(a.y>420&&Math.hypot(a.x-792,a.y-465)<66&&chance<.65){setAction(a,'warm',time,3+random(a)*3);continue;}
+  if(((a.y<220&&a.x>650&&a.x<770)||(a.y>420&&a.y<485&&a.x>665&&a.x<745))&&chance<.65){setAction(a,'read',time,3+random(a)*4);continue;}
+  if(a.y>495&&a.y<555&&a.x>365&&a.x<635&&chance<.6){setAction(a,'admire',time,3+random(a)*3);continue;}
   const friend=agents.find(b=>b!==a&&b.action==='walk'&&!stairs(b)&&Math.abs(a.y-b.y)<18&&Math.abs(a.x-b.x)>33&&Math.abs(a.x-b.x)<88);
   if(friend&&chance<.4){
    const prank=random(a)<.35,duration=3+random(a)*2;
    setAction(a,prank?'prank':'greet',time,duration,friend.id);setAction(friend,prank?'surprise':'greet',time,duration,a.id);a.facing=friend.x>a.x?1:-1;friend.facing=-a.facing;
   }else{
-   const kind=['rest','sit','wave','heart','surprise'][Math.floor(random(a)*5)];setAction(a,kind,time,kind==='sit'?6+random(a)*5:2.8+random(a)*2);
+   const kind=['rest','sit','wave','heart','surprise','photo','greet','admire'][Math.floor(random(a)*8)];setAction(a,kind,time,kind==='sit'?3.5+random(a)*2.5:2.1+random(a)*1.8);
   }
  }
- const start=world.tick%Math.max(1,agents.length);
- for(let j=0;j<agents.length;j++){
-  const a=agents[(j+start)%agents.length];a.moving=false;if(a.action!=='walk')continue;
-  const phase=(a.phase+dt/a.route.duration)%1,target=sampleHouseRoute(a.route,phase),dx=target.x-a.x,dy=target.y-a.y,distance=Math.hypot(dx,dy),step=Math.min(distance,(21+(a.seed%12))*dt);
-  if(distance<.02){a.phase=phase;continue;}
-  const ux=dx/distance,uy=dy/distance;
-  const candidate={x:a.x+ux*step,y:a.y+uy*step};
-  const available=p=>p.x>=48&&p.x<=845&&p.y>=150&&p.y<=615&&!agents.some(b=>a!==b&&overlaps(p,b,appearance.gap));
-  let next=available(candidate)?candidate:null;
-  if(!next){
-   // Yield first, then take a small side step; every accepted step keeps the same personal space.
-   a.blocked+=dt;
-   if(a.blocked>.7){for(const sign of [a.seed%2?1:-1,a.seed%2?-1:1]){
-    const sideways={x:a.x+(ux*.3-uy*sign)*step,y:a.y+(uy*.3+ux*sign)*step};
-    const inLane=stairs(a)?Math.abs(sideways.x-target.x)<28:Math.abs(sideways.y-target.y)<27;
-    if(inLane&&available(sideways)){next=sideways;break;}
-   }}
+ // These are decorative avatars, not physical players: intentional pass-through
+ // avoids deadlocks when many guests meet on stairs or in narrow corridors.
+ for(const a of agents){
+  a.moving=false;
+  if(a.action!=='walk')continue;
+  const phase=(a.phase+dt/a.route.duration)%1;
+  const target=sampleHouseRoute(a.route,phase);
+  const dx=target.x-a.x,dy=target.y-a.y;
+  // Smoothly catch up to the route without teleporting after a long idle pose.
+  const distance=Math.hypot(dx,dy),step=Math.min(distance,(48+(a.seed%22))*dt);
+  if(distance>.001){
+   a.x+=dx/distance*step;a.y+=dy/distance*step;
+   a.facing=dx>=0?1:-1;a.moving=true;
   }
-  if(!next&&a.blocked>2){const back={x:a.x-ux*step,y:a.y-uy*step};if(available(back))next=back;}
-  if(next){a.moving=Math.hypot(next.x-a.x,next.y-a.y)>.02;a.facing=next.x>=a.x?1:-1;a.x=next.x;a.y=next.y;if(Math.hypot(a.x-target.x,a.y-target.y)<2)a.phase=phase;if(next===candidate)a.blocked=0;}
+  a.phase=phase;
+  a.blocked=0;
  }
+
  return world;
 }
 
