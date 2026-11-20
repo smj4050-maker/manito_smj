@@ -1,0 +1,195 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function admin() {
+      return signedIn()
+        && 'email' in request.auth.token
+        && request.auth.token.email == 'admin@manito.invalid'
+        && request.auth.token.firebase.sign_in_provider == 'password';
+    }
+    function config() { return get(/databases/$(database)/documents/artifacts/manito-xmas-app/data/manito_settings_config).data; }
+    function passwordUser() { return signedIn() && request.auth.token.firebase.sign_in_provider == 'password'; }
+    function session() { return get(/databases/$(database)/documents/artifacts/manito-xmas-app/accounts/$(request.auth.uid)).data; }
+    function login() { return get(/databases/$(database)/documents/artifacts/manito-xmas-app/logins/$(session().nameKey)).data; }
+    function invitation() { return get(/databases/$(database)/documents/artifacts/manito-xmas-app/invites/$(session().inviteId)).data; }
+    function validSession() {
+      return passwordUser()
+        && exists(/databases/$(database)/documents/artifacts/manito-xmas-app/accounts/$(request.auth.uid))
+        && login().ownerUid == request.auth.uid
+        && login().email == request.auth.token.email
+        && login().inviteId == session().inviteId
+        && login().memberId == session().memberId
+        && exists(/databases/$(database)/documents/artifacts/manito-xmas-app/invites/$(session().inviteId))
+        && invitation().active == true
+        && invitation().name == session().name;
+    }
+    function participant() {
+      return validSession() && config().hasDraw == true
+        && invitation().roundId == config().roundId
+        && invitation().targetName is string && invitation().targetName.size() > 0;
+    }
+    function validPublicConfig(data) {
+      return data.keys().hasOnly(['hasDraw', 'isRevealed', 'roundId'])
+        && data.keys().hasAll(['hasDraw', 'isRevealed', 'roundId'])
+        && data.hasDraw is bool && data.isRevealed is bool
+        && data.roundId is string && data.roundId.size() > 0
+        && (data.hasDraw || data.isRevealed == false);
+    }
+    function validAccount(data) {
+      let directory = getAfter(/databases/$(database)/documents/artifacts/manito-xmas-app/logins/$(data.nameKey)).data;
+      return data.keys().hasOnly(['name', 'nameKey', 'memberId', 'inviteId'])
+        && data.keys().hasAll(['name', 'nameKey', 'memberId', 'inviteId'])
+        && data.nameKey is string && data.nameKey.matches('^[a-f0-9]{64}$')
+        && directory.ownerUid == request.auth.uid
+        && directory.email == request.auth.token.email
+        && directory.name == data.name && directory.memberId == data.memberId && directory.inviteId == data.inviteId
+        && get(/databases/$(database)/documents/artifacts/manito-xmas-app/invites/$(data.inviteId)).data.active == true;
+    }
+    function validOwnProfile(data) {
+      return data.keys().hasOnly(['name', 'nickname', 'avatar', 'giftSubmitted', 'giftRoundId', 'drawSeenRoundId', 'roomEnteredAt'])
+        && data.keys().hasAll(['name', 'nickname', 'avatar', 'giftSubmitted', 'giftRoundId'])
+        && data.name == invitation().name
+        && data.nickname is string && data.nickname.size() >= 1 && data.nickname.size() <= 30
+        && data.avatar in ['🎅', '🤶', '🦌', '⛄', '🧝', '🐧', '🐻', '🐰', 'mini-01', 'mini-02', 'mini-03', 'mini-04', 'mini-05', 'mini-06', 'mini-07', 'mini-08', 'mini-09', 'mini-10', 'mini-11', 'mini-12', 'mini-13', 'mini-14', 'mini-15', 'mini-16', 'mini-17', 'mini-18', 'mini-19', 'mini-20', 'mini-21', 'mini-22', 'mini-23', 'mini-24', 'mini-25', 'mini-26', 'mini-27', 'mini-28', 'mini-29', 'mini-30']
+        && data.giftSubmitted is bool && data.giftRoundId == config().roundId
+        && data.get('drawSeenRoundId','') in ['',config().roundId]
+        && (!('roomEnteredAt' in data) || (data.roomEnteredAt is timestamp && data.roomEnteredAt <= request.time));
+    }
+    function validEvent(data, eventId, roundId) {
+      return data.keys().hasOnly(['id', 'type', 'target', 'targetId', 'text', 'hint', 'timestamp', 'roundId'])
+        && data.keys().hasAll(['id', 'type', 'target', 'targetId', 'text', 'hint', 'timestamp', 'roundId'])
+        && data.id == eventId && data.roundId == roundId
+        && data.type in ['activity', 'message']
+        && data.target == invitation().targetName && data.targetId == invitation().targetId
+        && data.text is string && data.text.size() <= 1000
+        && ((data.type == 'message' && data.text.size() > 0) || (data.type != 'message' && data.text.size() == 0))
+        && data.hint in ['', '🎁', '☕️', '🍫', '🧦', '🎫']
+        && data.timestamp == request.time;
+    }
+
+    match /artifacts/manito-xmas-app/data/manito_settings_config {
+      allow get: if signedIn();
+      allow create, update: if admin() && validPublicConfig(request.resource.data);
+    }
+    match /artifacts/manito-xmas-app/data/manito_settings_members {
+      allow get: if admin();
+      allow create, update: if admin() && request.resource.data.keys().hasOnly(['list'])
+        && request.resource.data.list is list && request.resource.data.list.size() <= 150;
+    }
+    match /artifacts/manito-xmas-app/data/manito_reveal {
+      allow get: if admin() || (participant() && config().isRevealed == true);
+      allow create, update: if admin() && request.resource.data.keys().hasOnly(['pairs'])
+        && request.resource.data.pairs is map && request.resource.data.pairs.size() <= 150;
+    }
+    match /artifacts/manito-xmas-app/invites/{inviteId} {
+      allow get: if admin() || (validSession() && session().inviteId == inviteId);
+      allow list: if admin() && request.query.limit <= 200;
+      allow create, update, delete: if admin();
+    }
+    // 공통 주소의 이름 조회에는 로그인용 별칭만 있으며, 마니또 배정은 포함하지 않습니다.
+    match /artifacts/manito-xmas-app/logins/{nameKey} {
+      allow get: if signedIn();
+      allow create, delete: if admin();
+      allow update: if admin() || (passwordUser()
+        && resource.data.email == request.auth.token.email
+        && resource.data.ownerUid in ['', request.auth.uid]
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ownerUid'])
+        && getAfter(/databases/$(database)/documents/artifacts/manito-xmas-app/accounts/$(request.auth.uid)).data.nameKey == nameKey
+        && validAccount(getAfter(/databases/$(database)/documents/artifacts/manito-xmas-app/accounts/$(request.auth.uid)).data));
+    }
+    match /artifacts/manito-xmas-app/accounts/{uid} {
+      allow get: if admin() || (signedIn() && request.auth.uid == uid);
+      allow create: if passwordUser() && request.auth.uid == uid && validAccount(request.resource.data);
+      allow update: if admin() || (passwordUser() && request.auth.uid == uid && request.resource.data == resource.data && validAccount(request.resource.data));
+      allow delete: if admin();
+    }
+    match /artifacts/manito-xmas-app/profiles/{memberId} {
+      allow get: if admin() || participant();
+      allow list: if (admin() || participant()) && request.query.limit <= 200;
+      allow create: if admin() || (participant() && invitation().memberId == memberId && validOwnProfile(request.resource.data)
+        && (!('roomEnteredAt' in request.resource.data) || request.resource.data.roomEnteredAt == request.time));
+      allow update: if admin() || (participant() && invitation().memberId == memberId && validOwnProfile(request.resource.data)
+        && (request.resource.data.get('roomEnteredAt',null) == resource.data.get('roomEnteredAt',null)
+          || request.resource.data.get('roomEnteredAt',null) == request.time));
+      allow delete: if admin();
+    }
+    match /artifacts/manito-xmas-app/rounds/{roundId}/events/{eventId} {
+      allow get: if admin() || (participant() && config().roundId == roundId);
+      allow list: if (admin() || (participant() && config().roundId == roundId)) && request.query.limit <= 300;
+      allow create: if participant() && config().roundId == roundId && validEvent(request.resource.data, eventId, roundId);
+      allow delete: if admin();
+    }
+
+    match /artifacts/manito-xmas-app/photos/{postId} {
+      allow get: if admin() || participant();
+      allow list: if (admin() || participant()) && request.query.limit <= 150;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['id','uid','memberId','nickname','text','image','createdAt'])
+        && request.resource.data.keys().hasAll(['id','uid','memberId','nickname','text','image','createdAt'])
+        && request.resource.data.id == postId && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.text is string && request.resource.data.text.size() <= 500
+        && request.resource.data.image is string && request.resource.data.image.size() <= 220000
+        && (request.resource.data.image == '' || request.resource.data.image.matches('^data:image/jpeg;base64,.*$'))
+        && (request.resource.data.text.size() > 0 || request.resource.data.image.size() > 22)
+        && ((admin() && request.resource.data.memberId == 'admin' && request.resource.data.nickname == '방장')
+          || (participant() && request.resource.data.memberId == invitation().memberId
+            && request.resource.data.nickname == get(/databases/$(database)/documents/artifacts/manito-xmas-app/profiles/$(invitation().memberId)).data.nickname));
+      allow delete: if admin() || (participant() && resource.data.memberId == invitation().memberId);
+    }
+
+    match /artifacts/manito-xmas-app/treeNotes/{memberId} {
+      allow get: if admin() || participant();
+      allow list: if (admin() || participant()) && request.query.limit <= 200;
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasOnly(['memberId','uid','nickname','message','kind','color','updatedAt'])
+        && request.resource.data.keys().hasAll(['memberId','uid','nickname','message','kind','color','updatedAt'])
+        && request.resource.data.memberId == memberId && request.resource.data.uid == request.auth.uid
+        && request.resource.data.message is string && request.resource.data.message.size() >= 1 && request.resource.data.message.size() <= 160
+        && request.resource.data.kind in ['star','ball','bow','bell','gift','snow']
+        && request.resource.data.color in ['#e77882','#ebc86c','#82b68d','#88b6d8','#b69bd0','#fff2cf']
+        && request.resource.data.updatedAt == request.time
+        && ((admin() && memberId == 'admin' && request.resource.data.nickname == '방장')
+          || (participant() && memberId == invitation().memberId
+            && request.resource.data.nickname == get(/databases/$(database)/documents/artifacts/manito-xmas-app/profiles/$(memberId)).data.nickname));
+      allow delete: if admin() || (participant() && memberId == invitation().memberId);
+    }
+
+    match /artifacts/manito-xmas-app/readStates/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow create, update: if passwordUser() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['photosAt','guestbookAt'])
+        && (!('photosAt' in request.resource.data) || (request.resource.data.photosAt is timestamp && request.resource.data.photosAt <= request.time))
+        && (!('guestbookAt' in request.resource.data) || (request.resource.data.guestbookAt is timestamp && request.resource.data.guestbookAt <= request.time));
+    }
+
+    // 페이지 방문 횟수만 집계하며, 누가 접속했는지나 접속 여부를 기록하지 않습니다.
+    function viewData(id) { return getAfter(/databases/$(database)/documents/artifacts/manito-xmas-app/pageViews/$(id)).data; }
+    function previousCount(id) { return exists(/databases/$(database)/documents/artifacts/manito-xmas-app/visitStats/$(id)) ? get(/databases/$(database)/documents/artifacts/manito-xmas-app/visitStats/$(id)).data.count : 0; }
+    function validVisitCounter(id, data) {
+      return signedIn() && data.keys().hasOnly(['count', 'lastViewId']) && data.keys().hasAll(['count', 'lastViewId'])
+        && data.count is int && data.count == previousCount(id) + 1
+        && data.lastViewId is string && data.lastViewId.matches('^[a-f0-9-]{36}$')
+        && !exists(/databases/$(database)/documents/artifacts/manito-xmas-app/pageViews/$(data.lastViewId))
+        && viewData(data.lastViewId).at == request.time
+        && (id == 'total' || id == 'day-' + string(viewData(data.lastViewId).day));
+    }
+    match /artifacts/manito-xmas-app/visitStats/{statId} {
+      allow get: if signedIn();
+      allow create, update: if validVisitCounter(statId, request.resource.data);
+    }
+    match /artifacts/manito-xmas-app/pageViews/{viewId} {
+      allow get: if signedIn();
+      allow create: if signedIn() && viewId.matches('^[a-f0-9-]{36}$')
+        && request.resource.data.keys().hasOnly(['day', 'at']) && request.resource.data.keys().hasAll(['day', 'at'])
+        && request.resource.data.at == request.time
+        && request.resource.data.day is int
+        && request.resource.data.day == int((request.time.toMillis() + 32400000) / 86400000)
+        && getAfter(/databases/$(database)/documents/artifacts/manito-xmas-app/visitStats/total).data.lastViewId == viewId
+        && getAfter(/databases/$(database)/documents/artifacts/manito-xmas-app/visitStats/$( 'day-' + string(request.resource.data.day) )).data.lastViewId == viewId;
+    }
+    // 명시하지 않은 경로, 이전 임시 문서, 전체 컬렉션 조회 등은 기본 거부됩니다.
+  }
+}

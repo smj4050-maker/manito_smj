@@ -1,0 +1,19 @@
+{
+  "dependencies": {
+    "firebase": "^13.1.0",
+    "lucide-react": "^1.66.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0",
+    "tailwindcss": "^3.4.19",
+    "tailwindcss-animate": "^1.0.7"
+  },
+  "name": "manito-secure-app",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build": "node build.cjs"
+  }
+}
