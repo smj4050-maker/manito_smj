@@ -1037,24 +1037,43 @@ export default function App() {
         .resident-tag {visibility:hidden;}
         .room-resident:hover .resident-tag,.room-resident:focus-visible .resident-tag,.room-resident.is-selected .resident-tag {visibility:visible;}
         .room-resident:focus-visible .resident-hit {stroke:#fff2b7;stroke-width:1;}
-        .resident-seat,.resident-seated-feet,.resident-raised-hand,.resident-heart,.resident-surprise,.resident-prank,.resident-book,.resident-warm-hands,.resident-admire,.resident-camera,.resident-flash {display:none;pointer-events:none;}
+        .resident-seat,.resident-seated-feet,.resident-raised-hand,.resident-heart,.resident-surprise,.resident-prank,.resident-book,.resident-admire,.resident-camera,.resident-flash {display:none;pointer-events:none;}
         .resident-walking {display:none;}
         .room-resident[data-action="walk"] .resident-standing {display:none;}
         .room-resident[data-action="walk"] .resident-walking {display:block;}
-        /* Eight distinct walking poses, not a sliding still image. Each cycle:
-           contact -> lift -> passing -> contact -> opposite leg -> recover. */
-        .room-resident[data-action="walk"] .walk-upper {animation:walk-torso-frames .88s steps(1,end) infinite;}
-        .room-resident[data-action="walk"] .walk-left-step {transform-origin:-5px -10px;animation:walk-left-frames .88s steps(1,end) infinite;}
-        .room-resident[data-action="walk"] .walk-right-step {transform-origin:5px -10px;animation:walk-right-frames .88s steps(1,end) infinite;}
-        .resident-left-arm,.resident-right-arm {display:none;pointer-events:none;}
-        .room-resident[data-action="walk"] .resident-left-arm,.room-resident[data-action="walk"] .resident-right-arm {display:block;}
-        .room-resident[data-action="walk"] .resident-left-arm {transform-origin:-10px -24px;animation:walk-arm-left-frames .88s steps(1,end) infinite;}
-        .room-resident[data-action="walk"] .resident-right-arm {transform-origin:10px -24px;animation:walk-arm-right-frames .88s steps(1,end) infinite;}
-        @keyframes walk-torso-frames {0%,100%{transform:translateY(0) rotate(-1deg)}12.5%{transform:translateY(-2px) rotate(0)}25%{transform:translateY(-3px) rotate(1deg)}37.5%{transform:translateY(-1px) rotate(1deg)}50%{transform:translateY(0) rotate(1deg)}62.5%{transform:translateY(-2px) rotate(0)}75%{transform:translateY(-3px) rotate(-1deg)}87.5%{transform:translateY(-1px) rotate(-1deg)}}
-        @keyframes walk-left-frames {0%,100%{transform:translate(-3px,1px) rotate(-17deg)}12.5%{transform:translate(-2px,-1px) rotate(-9deg)}25%{transform:translate(0,-3px) rotate(0)}37.5%{transform:translate(2px,-1px) rotate(11deg)}50%{transform:translate(3px,1px) rotate(17deg)}62.5%{transform:translate(2px,1px) rotate(10deg)}75%{transform:translate(0,0) rotate(0)}87.5%{transform:translate(-2px,1px) rotate(-10deg)}}
-        @keyframes walk-right-frames {0%,100%{transform:translate(3px,1px) rotate(17deg)}12.5%{transform:translate(2px,1px) rotate(10deg)}25%{transform:translate(0,0) rotate(0)}37.5%{transform:translate(-2px,1px) rotate(-10deg)}50%{transform:translate(-3px,1px) rotate(-17deg)}62.5%{transform:translate(-2px,-1px) rotate(-9deg)}75%{transform:translate(0,-3px) rotate(0)}87.5%{transform:translate(2px,-1px) rotate(11deg)}}
-        @keyframes walk-arm-left-frames {0%,100%{transform:rotate(21deg)}12.5%{transform:rotate(12deg)}25%{transform:rotate(0)}37.5%{transform:rotate(-14deg)}50%{transform:rotate(-21deg)}62.5%{transform:rotate(-12deg)}75%{transform:rotate(0)}87.5%{transform:rotate(14deg)}}
-        @keyframes walk-arm-right-frames {0%,100%{transform:rotate(-21deg)}12.5%{transform:rotate(-12deg)}25%{transform:rotate(0)}37.5%{transform:rotate(14deg)}50%{transform:rotate(21deg)}62.5%{transform:rotate(12deg)}75%{transform:rotate(0)}87.5%{transform:rotate(-14deg)}}
+        /* Contact, passing, opposite contact, opposite passing. */
+        .walk-upper {transform-origin:0 -10px;animation:walk-body .80s steps(1,end) infinite;}
+        .walk-left-step {transform-origin:-4px -10px;animation:walk-leg .80s steps(1,end) infinite;}
+        .walk-right-step {transform-origin:4px -10px;animation:walk-leg .80s steps(1,end) -.40s infinite;}
+        @keyframes walk-body {
+          0%,100% {transform:rotate(-5deg);}
+          25% {transform:translateY(-1.7px) rotate(-1deg);}
+          50% {transform:rotate(5deg);}
+          75% {transform:translateY(-1.7px) rotate(1deg);}
+        }
+        @keyframes walk-leg {
+          0%,100% {transform:translateX(-3px) rotate(24deg);}
+          25% {transform:translate(1px,-3px) rotate(-10deg);}
+          50% {transform:translateX(3px) rotate(-24deg);}
+          75% {transform:translate(0,-.7px);}
+        }
+        .resident-cup {display:none;pointer-events:none;}
+        .room-resident[data-action="sit"] .resident-cup,.room-resident[data-action="warm"] .resident-cup {
+          display:block;animation:cup-poses 2.8s steps(1,end) infinite;
+        }
+        .room-resident[data-action="sit"] .resident-raised-hand {
+          display:block;transform-origin:10px -18px;animation:seated-wave 2.8s steps(1,end) infinite;
+        }
+        @keyframes cup-poses {
+          0%,100% {transform:translate(0,0);}
+          25% {transform:translate(-3px,-1px);}
+          50% {transform:translate(0,-6px);}
+          75% {transform:translateY(1px);}
+        }
+        @keyframes seated-wave {
+          0%,50%,75%,100% {visibility:hidden;}
+          25% {visibility:visible;transform:translateY(4px) rotate(12deg);}
+        }
         .room-resident[data-action="sit"] .resident-seat,.room-resident[data-action="sit"] .resident-seated-feet,.room-resident[data-action="warm"] .resident-seat,.room-resident[data-action="warm"] .resident-seated-feet {display:block;}
         .room-resident[data-action="sit"] .resident-pose,.room-resident[data-action="warm"] .resident-pose {clip-path:url(#resident-seated-clip);transform:translateY(3px);}
         .room-resident[data-action="wave"] .resident-raised-hand,.room-resident[data-action="greet"] .resident-raised-hand,.room-resident[data-action="prank"] .resident-raised-hand {display:block;transform-origin:12px -20px;animation:minime-wave .6s ease-in-out infinite;}
@@ -1064,43 +1083,53 @@ export default function App() {
         @keyframes gentle-greet {0%,100%{transform:rotate(0)}25%{transform:rotate(-3deg)}60%{transform:rotate(3deg)}}
         @keyframes gentle-heart {0%,100%{transform:translateY(0)}30%,50%{transform:translateY(-2px)}}
         @keyframes gentle-photo {0%,100%{transform:translateY(0)}35%,50%{transform:translateY(-2px)}}
+        .room-resident[data-action="heart"] .resident-heart {display:block;}
+        .room-resident[data-action="read"] .resident-book {display:block;transform-origin:0 -13px;}
         /* Multi-pose gestures: prepare -> gesture -> hold -> recover. */
         .room-resident[data-action="wave"] .resident-raised-hand,.room-resident[data-action="greet"] .resident-raised-hand {animation:minime-wave-frames 2.4s steps(1,end) infinite;}
         .room-resident[data-action="heart"] .resident-heart {animation:minime-heart-frames 2.8s steps(1,end) infinite;}
         .room-resident[data-action="read"] .resident-book {animation:minime-page-frames 3.2s steps(1,end) infinite;}
-        @keyframes minime-wave-frames {0%,100%{opacity:0;transform:rotate(-50deg) translateY(6px)}12.5%{opacity:1;transform:rotate(-23deg) translateY(2px)}25%{transform:rotate(17deg)}37.5%{transform:rotate(-21deg)}50%{transform:rotate(19deg)}62.5%{transform:rotate(-15deg)}75%{transform:rotate(13deg)}87.5%{opacity:1;transform:rotate(-30deg) translateY(3px)}}
-        @keyframes minime-heart-frames {0%,100%{opacity:0;transform:translateY(7px) scale(.45)}12.5%{opacity:1;transform:translateY(2px) scale(.7)}25%{transform:translateY(-3px) scale(1)}37.5%{transform:translateY(-6px) scale(1.3)}50%{transform:translateY(-9px) scale(1.1)}62.5%{transform:translateY(-12px) scale(1.25)}75%{opacity:.65;transform:translateY(-15px) scale(1)}87.5%{opacity:.2;transform:translateY(-18px) scale(.7)}}
-        @keyframes minime-page-frames {0%,12.5%,100%{transform:translateY(2px) rotate(-2deg) scaleX(.9)}25%,37.5%{transform:translateY(0) rotate(0) scaleX(1)}50%{transform:skewX(-13deg) scaleX(.8)}62.5%{transform:skewX(5deg) scaleX(1)}75%,87.5%{transform:translateY(1px) rotate(2deg) scaleX(.95)}}
+        @keyframes minime-wave-frames {
+          0%,100% {opacity:0;transform:rotate(-40deg);}
+          25% {opacity:1;transform:rotate(-19deg);}
+          50% {opacity:1;transform:rotate(20deg);}
+          75% {opacity:1;transform:rotate(-8deg) translateY(2px);}
+        }
+        @keyframes minime-heart-frames {
+          0%,100% {opacity:0;transform:translateY(4px) scale(.55);}
+          25% {opacity:1;transform:translateY(-2px);}
+          50% {opacity:1;transform:translateY(-7px) scale(1.25);}
+          75% {opacity:.5;transform:translateY(-14px);}
+        }
+        @keyframes minime-page-frames {
+          0%,100% {transform:rotate(-4deg);}
+          25% {transform:translateY(-2px);}
+          50% {transform:translateY(-2px) skewX(-19deg) scaleX(.8);}
+          75% {transform:rotate(4deg);}
+        }
         .room-resident[data-action="photo"] .resident-camera,.room-resident[data-action="photo"] .resident-flash {display:block;}
         .room-resident[data-action="photo"] .resident-camera {animation:minime-camera 2.5s ease-in-out infinite;transform-origin:0px -18px;}
         .room-resident[data-action="photo"] .resident-flash {animation:minime-flash 2.5s steps(1,end) infinite;}
         @keyframes minime-camera {0%,12%,100%{transform:translateY(5px) scale(.8);opacity:0}22%,76%{transform:translateY(0) scale(1);opacity:1}83%{transform:translateY(2px);opacity:.5}}
         @keyframes minime-flash {0%,39%,47%,100%{opacity:0}40%,46%{opacity:1}}
-        .room-resident[data-action="heart"] .resident-heart {display:block;animation:minime-heart 1.8s ease-out infinite;}
         .room-resident[data-action="surprise"] .resident-surprise {display:block;animation:minime-pop .7s ease-in-out infinite;}
         .room-resident[data-action="surprise"] .resident-pose {animation:minime-startle .7s ease-in-out infinite;}
         .room-resident[data-action="prank"] .resident-prank {display:block;animation:minime-pop .8s ease-in-out infinite;}
         .room-resident[data-action="prank"] .resident-pose {animation:minime-play .8s ease-in-out infinite;}
-        .room-resident[data-action="read"] .resident-book {display:block;transform-origin:0 -13px;animation:book-turn 3.2s ease-in-out infinite;}
-        @keyframes book-turn {0%,20%,100%{transform:skewX(0)}28%{transform:skewX(-4deg)}36%{transform:skewX(1deg)}58%,78%{transform:skewX(0)}85%{transform:skewX(4deg)}92%{transform:skewX(0)}}
         .room-resident[data-action="read"] .resident-pose {animation:minime-read 2s ease-in-out infinite;}
-        .room-resident[data-action="warm"] .resident-warm-hands {display:block;animation:minime-warm .7s ease-in-out infinite;}
         .room-resident[data-action="admire"] .resident-admire {display:block;animation:minime-pop 2s ease-in-out infinite;}
         .fire-tongue,.candle-flame {transform-box:fill-box;transform-origin:center bottom;animation:flame-flicker .9s ease-in-out infinite alternate;}
         .flame-inner {animation-delay:-.4s;animation-duration:.65s;}
         .hearth-glow,.candle-halo {animation:glow-flicker 2.2s ease-in-out infinite alternate;}
-        .room-resident[data-action="wave"] .resident-raised-hand,.room-resident[data-action="greet"] .resident-raised-hand{animation-duration:calc(var(--motion-speed,.9s) * 2.7);}
+        .room-resident[data-action="greet"] .resident-raised-hand{animation-duration:1.6s;}
         .room-resident[data-action="heart"] .resident-heart{animation-duration:calc(var(--motion-speed,.9s) * 3.1);}
         .room-resident[data-action="sit"] .resident-pose{animation:sit-breathe 3.1s ease-in-out infinite;}
         @keyframes sit-breathe {0%,20%,100%{transform:translateY(3px)}45%{transform:translateY(3.7px)}75%{transform:translateY(3.2px)}}
-        @keyframes minime-step {0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-1px) rotate(1deg)}}
         @keyframes minime-wave {0%,100%{transform:rotate(-15deg) translateY(1px)}12%{transform:rotate(-5deg) translateY(0)}25%{transform:rotate(12deg) translateY(-1px)}38%{transform:rotate(-6deg)}51%{transform:rotate(16deg) translateY(-1px)}65%{transform:rotate(-7deg)}78%{transform:rotate(11deg)}90%{transform:rotate(-11deg)}}
-        @keyframes minime-heart {0%,8%{opacity:0;transform:translateY(2px) scale(.5)}16%{opacity:.6;transform:translateY(0) scale(.8)}27%{opacity:1;transform:translateY(-3px) scale(1.13)}38%{transform:translateY(-5px) scale(1)}55%{opacity:1;transform:translateY(-9px) scale(1.08)}78%{opacity:.45;transform:translateY(-13px) scale(1.05)}100%{opacity:0;transform:translateY(-17px) scale(.85)}}
         @keyframes minime-pop {0%,100%{opacity:.45;transform:translateY(0)}50%{opacity:1;transform:translateY(-2px)}}
         @keyframes minime-startle {0%,100%{transform:translateY(0)}35%{transform:translateY(-3px)}}
         @keyframes minime-play {0%,100%{transform:translateX(0)}50%{transform:translateX(calc(var(--face,1)*2px))}}
         @keyframes minime-read {0%,12%,100%{transform:translateY(0) rotate(0)}24%{transform:translateY(.5px) rotate(-1deg)}38%{transform:translateY(1px) rotate(-1.4deg)}52%,64%{transform:translateY(1px) rotate(0)}78%{transform:translateY(.5px) rotate(1deg)}90%{transform:translateY(0) rotate(0)}}
-        @keyframes minime-warm {0%,100%{transform:translateY(0)}50%{transform:translateY(-1px)}}
         @keyframes flame-flicker {0%{opacity:.65;transform:scale(.9,.86) skewX(-3deg)}100%{opacity:1;transform:scale(1.04,1.07) skewX(3deg)}}
         @keyframes glow-flicker {0%{opacity:.4}100%{opacity:.85}}
         .house-light {animation:room-twinkle 2.6s ease-in-out infinite;}
@@ -1112,7 +1141,7 @@ export default function App() {
         @keyframes room-twinkle { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
         @media (min-width: 1024px) { .room-stage { width:1000px;height:800px; } .room-pan-hint { display: none; } }
         @media (max-width: 639px) { .room-toolbar { gap: 6px; font-size: 10px; } .room-count { font-size: 9px; } .room-edit { padding: 2px 5px; font-size: 9px; } .room-caption { font-size: 8px; } .cyworld-font input[type=text], .cyworld-font input[type=password], .cyworld-font textarea { font-size: 16px; } .login-panel { padding: 16px; } .login-panel h2 { font-size: 18px; } .login-panel p { margin-bottom: 12px; } }
-        @media (prefers-reduced-motion: reduce) { .room-walker,.room-person,.room-light,.room-flame,.room-snow,.house-light,.fire-tongue,.candle-flame,.hearth-glow,.candle-halo,.resident-pose,.walk-upper,.walk-left-step,.walk-right-step { animation: none!important; } }
+        @media (prefers-reduced-motion: reduce) { .room-walker,.room-person,.room-light,.room-flame,.room-snow,.house-light,.fire-tongue,.candle-flame,.hearth-glow,.candle-halo,.resident-pose,.walk-upper,.walk-left-step,.walk-right-step,.resident-cup,.resident-raised-hand,.resident-heart,.resident-book,.resident-camera,.resident-flash { animation: none!important; } .room-resident[data-action="walk"] .resident-standing {display:block;} .room-resident[data-action="walk"] .resident-walking,.room-resident[data-action="sit"] .resident-raised-hand,.room-resident .resident-flash {display:none;} }
       `}} />
     </div>
   );
@@ -1418,24 +1447,21 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
     const signature=[...ids].sort().join('|');
     if(!crowd.current||crowd.current.signature!==signature){crowd.current=createCrowd(ids);crowd.current.signature=signature;}
     const world=crowd.current,byId=new Map(world.agents.map(person=>[person.id,person]));
-    let frame,last=performance.now(),painted=-Infinity, lastOrder='';
+    let frame,last=performance.now(),painted=-Infinity;
     const interval=ids.length>=55?65:ids.length>=35?50:40;
     const draw=now=>{
       if(document.hidden){last=now;frame=requestAnimationFrame(draw);return;}
       if(now-painted>=interval){
         stepCrowd(world,Math.min(.1,(now-last)/1000));
         last=now;painted=now;svg.dataset.motionTime=String(world.time);
-        const layers=[stage.querySelector('.interactive-tree')];
         residents.forEach(node=>{
           const person=byId.get(node.dataset.memberId);if(!person)return;
-          node.setAttribute('transform',`translate(${person.x.toFixed(2)} ${person.y.toFixed(2)})`);node.dataset.depth=String(person.y);
+          node.setAttribute('transform',`translate(${person.x.toFixed(2)} ${person.y.toFixed(2)})`);
           const action=(person.action==='walk'&&!person.moving)?'rest':person.action;
           if(node.dataset.action!==action){node.dataset.action=action;node.querySelector('.resident-status').textContent=ACTION_LABELS[action];}
-          node.dataset.partner=person.partner||'';node.style.setProperty('--face',person.facing||1);layers.push(node);
+          node.dataset.partner=person.partner||'';node.style.setProperty('--face',person.facing||1);
         });
-        layers.sort((a,b)=>Number(a.dataset.depth)-Number(b.dataset.depth));
-        const order=layers.map(node=>node.dataset.memberId||'tree').join('|');
-        if(order!==lastOrder){layers.forEach((node,index)=>{if(stage.children[index]!==node)stage.insertBefore(node,stage.children[index]||null);});lastOrder=order;}
+
       }
       frame=requestAnimationFrame(draw);
     };
@@ -1454,7 +1480,7 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
         <svg ref={scene} viewBox="0 0 1000 650" className="room-scene connected-house" preserveAspectRatio="none" role="group" aria-label="1층과 2층을 계단으로 오가는 울장복 미니미들">
           <g className="room-background-layer" pointerEvents="none">
           <image href={ROOM_BACKGROUND} width="1000" height="650" preserveAspectRatio="none" pointerEvents="none"/>
-          <defs><radialGradient id="fire-warm-glow"><stop stopColor="#ffbd58" stopOpacity=".55"/><stop offset="1" stopColor="#ffae42" stopOpacity="0"/></radialGradient><clipPath id="walk-upper-clip"><rect x="-18" y="-42" width="36" height="32"/></clipPath><clipPath id="walk-left-clip"><rect x="-18" y="-10" width="18" height="13"/></clipPath><clipPath id="walk-right-clip"><rect x="0" y="-10" width="18" height="13"/></clipPath><clipPath id="resident-seated-clip"><rect x="-18" y="-42" width="36" height="33"/></clipPath></defs>
+          <defs><radialGradient id="fire-warm-glow"><stop stopColor="#ffbd58" stopOpacity=".55"/><stop offset="1" stopColor="#ffae42" stopOpacity="0"/></radialGradient><clipPath id="walk-upper-clip"><rect x="-18" y="-42" width="36" height="33"/></clipPath><clipPath id="walk-left-clip"><rect x="-18" y="-11" width="18" height="14"/></clipPath><clipPath id="walk-right-clip"><rect x="0" y="-11" width="18" height="14"/></clipPath><clipPath id="resident-seated-clip"><rect x="-18" y="-42" width="36" height="33"/></clipPath></defs>
           <ellipse className="hearth-glow" cx="817" cy="425" rx="91" ry="64" fill="url(#fire-warm-glow)" pointerEvents="none"/>
           <g className="hearth-flames" transform="translate(818 438)" pointerEvents="none"><path className="fire-tongue" d="M-16 0Q-23-13-12-24Q-11-15-7-18Q-9-35 1-43Q-3-24 8-19Q9-28 13-30Q26-11 17 0Z" fill="#ff8d2588"/><path className="fire-tongue flame-inner" d="M-9 0Q-15-14-5-23Q-5-14 2-28Q6-19 8-15Q16-8 10 0Z" fill="#ffdf8799"/></g>
           {[[754,340],[765,345],[682,150],[361,152]].map(([x,y],index)=><g key={index} transform={`translate(${x} ${y})`} pointerEvents="none"><ellipse className="candle-halo" cy="-6" rx="13" ry="19" fill="url(#fire-warm-glow)" style={{animationDelay:`${index*.3}s`}}/><rect x="-1.5" y="-3" width="3" height="8" fill="#f2d9a2"/><path className="candle-flame" d="M0-12Q-4-6 0-4Q4-6 0-12" fill="#ffda78" style={{animationDelay:`${index*.3}s`}}/></g>)}
@@ -1483,8 +1509,6 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
                   <g className="walk-upper" clipPath="url(#walk-upper-clip)"><g className="resident-body" transform="translate(-14 -36)"><PixelCharacter avatar={person.avatar} className="world-avatar" width={28} height={36}/></g></g>
                   <g className="walk-left-step"><g clipPath="url(#walk-left-clip)"><g className="resident-body" transform="translate(-14 -36)"><PixelCharacter avatar={person.avatar} className="world-avatar" width={28} height={36}/></g></g></g>
                   <g className="walk-right-step"><g clipPath="url(#walk-right-clip)"><g className="resident-body" transform="translate(-14 -36)"><PixelCharacter avatar={person.avatar} className="world-avatar" width={28} height={36}/></g></g></g>
-                  <g className="resident-left-arm"><path d="M-10-24L-14-16" stroke="#e8ba94" strokeWidth="3.2" strokeLinecap="round"/><circle cx="-14" cy="-15" r="2" fill="#f5d7b9"/></g>
-                  <g className="resident-right-arm"><path d="M10-24L14-16" stroke="#e8ba94" strokeWidth="3.2" strokeLinecap="round"/><circle cx="14" cy="-15" r="2" fill="#f5d7b9"/></g>
                 </g>
               </g>
               <g className="resident-seated-feet" pointerEvents="none"><path d="M-6-6V0H-1M5-6V0H10" stroke="#554d48" strokeWidth="4" fill="none"/></g>
@@ -1495,7 +1519,12 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
               <g className="resident-camera" pointerEvents="none"><rect x="-8" y="-22" width="16" height="11" rx="2" fill="#44566c" stroke="#e2eaf0" strokeWidth="1"/><circle cx="0" cy="-16" r="4" fill="#a7d7ee"/><rect x="-5" y="-25" width="7" height="3" rx="1" fill="#44566c"/></g>
               <g className="resident-flash" pointerEvents="none"><path d="M-3-30L0-38L3-30L11-30L5-25L7-18L0-22L-7-18L-5-25L-11-30Z" fill="#ffefa6" stroke="#ffffff" strokeWidth="1"/></g>
               <g className="resident-book" pointerEvents="none"><path d="M-10-20Q-4-22 0-18Q4-22 10-20V-10Q4-12 0-8Q-4-12-10-10Z" fill="#f4e5b8" stroke="#865f4a" strokeWidth="1"/><path d="M0-18V-8M-7-17L-3-16M3-16L7-17" stroke="#af8c62" strokeWidth=".7"/></g>
-              <g className="resident-warm-hands" pointerEvents="none"><path d="M-9-17L-2-19M9-17L2-19" stroke="#ffe6bf" strokeWidth="3"/></g>
+              <g className="resident-cup" pointerEvents="none">
+                <path d="M4-17H6Q9-17 8-14Q7-12 4-13" fill="none" stroke="#ffe8cd" strokeWidth="1.4"/>
+                <rect x="-4" y="-18" width="9" height="8" rx="2" fill="#af4449" stroke="#5a3631" strokeWidth=".7"/>
+                <ellipse cy="-18" rx="4" ry="1.1" fill="#f4dbc0"/>
+                <circle cx="-4.5" cy="-14" r="1.7" fill="#e8ba94"/>
+              </g>
               <g className="resident-admire" pointerEvents="none"><text x="0" y="-40" textAnchor="middle" fontSize="11" fill="#fff0b0">✧ ✧</text></g>
               <rect x="-14" y="-37" width="28" height="39" fill="transparent" className="resident-hit"/>
               {mine&&<path d="M-3 4H3L0 7Z" fill="#5bac83" pointerEvents="none"/>}
