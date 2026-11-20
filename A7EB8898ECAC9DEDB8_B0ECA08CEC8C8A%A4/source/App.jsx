@@ -74,7 +74,7 @@ const LEGACY_AVATARS = ['🎅', '🤶', '🦌', '⛄', '🧝', '🐧', '🐻', '
 const legacyAvatarMap = {'🎅':'mini-01','🤶':'mini-02','🦌':'mini-05','⛄':'mini-11','🧝':'mini-15','🐧':'mini-06','🐻':'mini-08','🐰':'mini-07'};
 const resolveAvatar = avatar => AVATARS.includes(avatar) ? avatar : legacyAvatarMap[avatar] || 'mini-01';
 const validAvatar = avatar => AVATARS.includes(avatar) || LEGACY_AVATARS.includes(avatar);
-const giftOpens = () => new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()) >= '2026-11-20';
+const giftOpens = () => { const parts = new Intl.DateTimeFormat('en-GB', {timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()); const date = Object.fromEntries(parts.map(part => [part.type,part.value])); return `${date.year}-${date.month}-${date.day}` >= '2026-12-20'; };
 const koreaDay = () => Math.floor((Date.now() + 9 * 60 * 60 * 1000) / 86400000);
 const visitStatDoc = key => doc(db, 'artifacts', appId, 'visitStats', key);
 const pageViewDoc = id => doc(db, 'artifacts', appId, 'pageViews', id);
@@ -114,7 +114,8 @@ async function normalizeMembers(list, previous, resetId) {
     if (id.includes('/')) throw new Error('구성원 식별번호가 올바르지 않습니다.');
     names.add(name); ids.add(id);
     const old = previous.find(item => item.id === id);
-    const entryToken = old?.name === name && old.id !== resetId && old.entryToken ? old.entryToken : randomToken();
+    const shouldReset = resetId instanceof Set ? resetId.has(id) : resetId === id;
+    const entryToken = old?.name === name && !shouldReset && old.entryToken ? old.entryToken : randomToken();
     const inviteId = await hashToken(entryToken);
     return { id, name, department: String(member.department || '').trim() || '미분류', entryToken, inviteId,
       nameKey: await hashToken(name), loginEmail: `u-${inviteId.slice(0,40)}@manito.invalid` };
@@ -534,6 +535,27 @@ export default function App() {
     });
     showModal('미니미 초기화',`${member.name}님이 같은 이름과 번호로 로그인하면 캐릭터·별명부터 다시 정할 수 있습니다.`);
   },true);
+  const handleResetAllMinimes=()=>runAction('admin-bulk-minime',async()=>{
+    if(!members.length)throw new Error('초기화할 구성원이 없습니다.');
+    if(window.prompt(`전체 ${members.length}명의 미니미·별명을 초기화합니다. 마니또 배정과 로그인 번호, 선물 준비 현황은 유지됩니다. 진행하려면 '전체미니미초기화'를 입력하세요.`)!=='전체미니미초기화')return false;
+    await runTransaction(db,async transaction=>{
+      const configSnap=await transaction.get(dataDoc('settings_config'));
+      if(configSnap.exists()&&configSnap.data().roundId!==roundId)throw new Error('배정 회차가 변경되었습니다. 새로고침 후 다시 진행해주세요.');
+      const snaps=await Promise.all(members.map(m=>transaction.get(profileDoc(m.id))));
+      members.forEach((m,index)=>{
+        const previous=snaps[index].exists()?snaps[index].data():{};
+        transaction.set(profileDoc(m.id),{name:m.name,nickname:'',avatar:'',drawSeenRoundId:'',giftSubmitted:previous.giftSubmitted===true,giftRoundId:previous.giftRoundId||roundId});
+      });
+    });
+    showModal('전체 미니미 초기화 완료',`${members.length}명의 미니미와 별명이 초기화되었습니다. 각자 기존 번호로 로그인하여 다시 선택할 수 있습니다.`);
+  },true);
+  const handleResetAllPins=()=>runAction('admin-bulk-pin',async()=>{
+    if(!members.length)throw new Error('초기화할 구성원이 없습니다.');
+    if(members.length>90)throw new Error('전체 번호 초기화는 한 번에 최대 90명까지 지원합니다.');
+    if(window.prompt(`전체 ${members.length}명의 4자리 번호를 초기화합니다. 기존 번호로 다시 로그인할 수 없으며 전원이 '처음 등록'을 해야 합니다. 마니또 배정은 유지됩니다. 진행하려면 '전체비밀번호초기화'를 입력하세요.`)!=='전체비밀번호초기화')return false;
+    await saveMembers(members,new Set(members.map(member=>member.id)));
+    showModal('전체 비밀번호 초기화 완료',`${members.length}명의 번호를 초기화했습니다. 모두 공통 주소에서 '처음 등록'으로 새 4자리 번호를 정해주세요.`);
+  },true);
   const migrationAttempt = useRef('');
   useEffect(() => {
     if (!isAdmin || !membersReady || !configReady || !members.length || members.every(m => m.nameKey && m.loginEmail)) return;
@@ -687,6 +709,7 @@ export default function App() {
   }, true);
 
   const handleGiftSubmit = async () => runAction('gift', async () => {
+    if (!giftOpens()) throw new Error('선물 준비 완료는 2026년 12월 20일(한국시간)부터 제출할 수 있어요.');
     requireParticipant(publicConfig);
     await setDoc(profileDoc(assignment.memberId), { giftSubmitted: true, giftRoundId: roundId }, { merge: true });
     if (identityRef.current === identity) showModal('감사합니다!', '선물 준비가 성공적으로 확인되었습니다. 🎅🎁');
@@ -820,6 +843,8 @@ export default function App() {
                 onUpdateMembers={handleUpdateMembers}
                 onResetPin={handleResetPin}
                 onResetMinime={handleResetMinime}
+                onResetAllMinimes={handleResetAllMinimes}
+                onResetAllPins={handleResetAllPins}
                 onUndoGift={handleUndoGift}
               />
             )}
@@ -1069,7 +1094,7 @@ export default function App() {
 
 // ================= Components =================
 
-function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profiles, members, onUpdateMembers, onResetPin, onResetMinime, onUndoGift }) {
+function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profiles, members, onUpdateMembers, onResetPin, onResetMinime, onResetAllMinimes, onResetAllPins, onUndoGift }) {
   const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [bulkText, setBulkText] = useState('');
   const [showSingleAdd, setShowSingleAdd] = useState(false);
@@ -1164,6 +1189,16 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
           텍스트로 일괄 등록 (여러 명)
         </button>
       </div>
+
+      <section className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded" aria-label="전체 초기화 관리자 전용">
+        <p className="text-sm font-extrabold text-amber-900 mb-1">⚠️ 전체 초기화 · 방장 전용</p>
+        <p className="text-xs text-amber-800 mb-3">초기화 전 입력 확인이 필요합니다. 마니또 배정과 선물 준비 현황은 유지됩니다.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <button type="button" onClick={onResetAllMinimes} className="rounded border border-orange-400 bg-white text-orange-800 font-bold px-3 py-3 text-sm hover:bg-orange-100">🎨 전체 미니미 초기화</button>
+          <button type="button" onClick={onResetAllPins} className="rounded border border-red-400 bg-white text-red-700 font-bold px-3 py-3 text-sm hover:bg-red-100">🔑 전체 비밀번호 초기화</button>
+        </div>
+        <p className="text-[11px] text-amber-900 mt-2">전체 비밀번호 초기화 시 모든 직원이 '처음 등록'을 통해 4자리 번호를 다시 설정해야 합니다.</p>
+      </section>
 
       {/* 입력 폼 영역 */}
       {showBulkAdd && (
@@ -1341,7 +1376,7 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
     const draw=now=>{
       if(document.hidden){last=now;frame=requestAnimationFrame(draw);return;}
       if(now-painted>=interval){
-        if(!reducedMotion)stepCrowd(world,Math.min(.1,(now-last)/1000));
+        stepCrowd(world,Math.min(.1,(now-last)/1000));
         last=now;painted=now;svg.dataset.motionTime=String(world.time);
         const layers=[stage.querySelector('.interactive-tree')];
         residents.forEach(node=>{
@@ -1355,7 +1390,7 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
         const order=layers.map(node=>node.dataset.memberId||'tree').join('|');
         if(order!==lastOrder){layers.forEach((node,index)=>{if(stage.children[index]!==node)stage.insertBefore(node,stage.children[index]||null);});lastOrder=order;}
       }
-      if(!reducedMotion)frame=requestAnimationFrame(draw);
+      frame=requestAnimationFrame(draw);
     };
     draw(performance.now());return()=>cancelAnimationFrame(frame);
   },[profiles,reducedMotion,people.map(person=>person.id).join('|')]);
@@ -1390,7 +1425,7 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
             const half=Math.ceil(people.length/2),rows=Math.ceil(half/14),floor=index%2,slot=Math.floor(index/2),col=slot%14,row=Math.floor(slot/14);
             const staticX=(floor?225:320)+col*(floor?43:36),staticY=(floor?535:170)+row*((floor?48:30)/Math.max(1,rows-1));
             const width=Math.min(138,Math.max(46,(person.nickname.length+(mine?3:0))*9));
-            return <g key={person.id} className={`room-resident ${selected===person.id?'is-selected':''}`} style={{'--motion-speed':`${.88+(index%7)*.045}s`}} data-member-id={person.id} data-stair-route="up-and-down" role="button" tabIndex={0} aria-label={`${person.nickname}의 미니미${mine?' (내 미니미)':''}`} aria-pressed={selected===person.id} transform={reducedMotion?`translate(${staticX} ${staticY})`:undefined} onClick={()=>setSelected(selected===person.id?null:person.id)} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setSelected(selected===person.id?null:person.id);}}}>
+            return <g key={person.id} className={`room-resident ${selected===person.id?'is-selected':''}`} style={{'--motion-speed':`${.88+(index%7)*.045}s`}} data-member-id={person.id} data-stair-route="up-and-down" role="button" tabIndex={0} aria-label={`${person.nickname}의 미니미${mine?' (내 미니미)':''}`} aria-pressed={selected===person.id} onClick={()=>setSelected(selected===person.id?null:person.id)} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setSelected(selected===person.id?null:person.id);}}}>
               <title className="resident-status">산책 중</title>
               <g className="resident-visual" transform={`scale(${appearance.scale} ${appearance.scale*650/800})`}>
               <ellipse cx="0" cy="0" rx="10" ry="2.5" fill="#382b2366" pointerEvents="none"/>
@@ -1573,7 +1608,7 @@ function DashboardView({ myName, myMemberId,incomingReadAt,onOpenIncoming,treePo
         <div className="mt-2 border-t border-dashed border-slate-200 pt-2">
           {!myProfile.giftSubmitted ? (
             <button onClick={onGiftSubmit} disabled={!giftEnabled} className={`w-full text-white text-xs sm:text-sm font-bold py-2.5 rounded transition ${giftEnabled?'bg-green-600 hover:bg-green-700':'bg-slate-400 cursor-not-allowed'}`}>
-              {giftEnabled?'🎁 23일 선물 준비 완료! (누르면 방장에게 전달됨)':'🎁 선물 준비 완료는 11월 20일부터 누를 수 있어요'}
+              {giftEnabled?'🎁 23일 선물 준비 완료! (누르면 방장에게 전달됨)':'🎁 선물 준비 완료는 12월 20일부터 누를 수 있어요'}
             </button>
           ) : (
             <div className="w-full bg-green-100 text-green-800 text-[11px] sm:text-xs font-bold py-1.5 text-center rounded border border-green-300">
