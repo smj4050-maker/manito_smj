@@ -168,10 +168,6 @@ function useYouTubeBgm() {
   const [phase,setPhase]=useState('idle'),[notice,setNotice]=useState('');
   const player=useRef(null),pending=useRef(null),host=useRef(null),wanted=useRef(false),alive=useRef(true),ready=useRef(false);
   const dispose=()=>{ready.current=false;try{player.current?.destroy();}catch{}player.current=null;pending.current=null;host.current?.remove();host.current=null;};
-  useEffect(()=>{
-    alive.current=true;loadYouTubeApi().catch(()=>{});
-    return()=>{alive.current=false;wanted.current=false;dispose();};
-  },[]);
   const ensurePlayer=()=>{
     if(ready.current&&player.current)return Promise.resolve(player.current);
     if(pending.current)return pending.current;
@@ -192,21 +188,43 @@ function useYouTubeBgm() {
           else if(event.data===2){setPhase('paused');}
           else if(event.data===0&&wanted.current){event.target.seekTo(0,true);event.target.playVideo();}
         },
-        onAutoplayBlocked:()=>{wanted.current=false;if(alive.current){setPhase('blocked');setNotice('재생 버튼을 한 번 더 눌러주세요.');}},
+        onAutoplayBlocked:()=>{if(alive.current&&wanted.current){wanted.current=false;setPhase('blocked');setNotice('화면을 누르거나 재생 버튼을 눌러주세요.');}},
         onError:()=>{clearTimeout(timer);wanted.current=false;const error=new Error('음악을 불러올 수 없어요. 재생을 다시 눌러주세요.');if(alive.current){setPhase('error');setNotice(error.message);}dispose();reject(error);}
       }});
     }));
     return pending.current;
   };
-  const toggle=async()=>{
-    if(wanted.current){wanted.current=false;player.current?.pauseVideo?.();setPhase('paused');setNotice('');return;}
+  const start=async()=>{
     wanted.current=true;setPhase('loading');setNotice('');
     try{
-      const instance=await ensurePlayer();
+      // With a ready iframe, send the request inside the user's tap handler.
+      const instance=ready.current&&player.current?player.current:await ensurePlayer();
       if(!alive.current||!wanted.current)return;
       instance.setVolume(55);instance.unMute();instance.playVideo();
     }catch(error){dispose();wanted.current=false;if(alive.current){setPhase('error');setNotice(error.message);}}
   };
+  const toggle=()=>{
+    if(phase==='playing'){
+      wanted.current=false;player.current?.pauseVideo?.();setPhase('paused');setNotice('');
+      return;
+    }
+    start();
+  };
+  useEffect(()=>{
+    alive.current=true;
+    start();
+    return()=>{alive.current=false;wanted.current=false;dispose();};
+  },[]);
+  useEffect(()=>{
+    if(phase!=='blocked')return;
+    const resume=event=>{
+      if(event.target instanceof Element&&event.target.closest('[data-bgm-toggle]'))return;
+      document.removeEventListener('click',resume,true);
+      start();
+    };
+    document.addEventListener('click',resume,true);
+    return()=>document.removeEventListener('click',resume,true);
+  },[phase]);
   return {phase,notice,toggle};
 }
 
@@ -838,7 +856,7 @@ export default function App() {
           <div className="bg-slate-100 text-[10px] sm:text-xs py-1 px-3 text-slate-600 flex items-center gap-2 border-b border-solid border-slate-200 shrink-0" data-testid="bgm-bar">
             <Music size={12} className="text-blue-500 shrink-0"/>
             <div className="flex-1 min-w-0 overflow-hidden"><marquee scrollamount="2">🎵 함께 듣는 크리스마스 음악 🎄</marquee></div>
-            <button onClick={bgm.toggle} aria-label={['playing','loading'].includes(bgm.phase)?'음악 일시정지':'음악 재생'} title={bgm.notice||'클릭해서 음악 재생·일시정지'} className="text-blue-600 border border-slate-300 bg-white rounded-sm px-2 py-0.5 shrink-0">{bgm.phase==='playing'?'Ⅱ 일시정지':bgm.phase==='loading'?'Ⅱ 연결 중…':'▶ 재생'}</button>
+            <button data-bgm-toggle onClick={bgm.toggle} aria-label={bgm.phase==='playing'?'음악 일시정지':'음악 재생'} title={bgm.notice||'클릭해서 음악 재생·일시정지'} className="text-blue-600 border border-slate-300 bg-white rounded-sm px-2 py-0.5 shrink-0">{bgm.phase==='playing'?'Ⅱ 일시정지':bgm.phase==='loading'?'Ⅱ 연결 중…':'▶ 재생'}</button>
             {bgm.notice&&<span className="sr-only" role="status">{bgm.notice}</span>}
           </div>
 
@@ -1101,7 +1119,7 @@ const DEMO_CROWD_SIZE = 80;
 
 function buildDemoCrowdProfiles(members, profiles) {
   const joined=Date.now();
-  return Object.fromEntries(Array.from({length:Math.max(DEMO_CROWD_SIZE,members.length)},(_,index)=>{
+  return Object.fromEntries(Array.from({length:DEMO_CROWD_SIZE},(_,index)=>{
     const staffName=members[index]?.name;
     const name=staffName||`테스트${String(index+1).padStart(2,'0')}`;
     return [`demo-${index+1}`,{_hasMinime:true,_memberId:`demo-${index+1}`,nickname:name,avatar:profiles?.[name]?.avatar||AVATAR_OPTIONS[index%AVATAR_OPTIONS.length].id,roomEnteredAt:joined}];
@@ -1132,7 +1150,6 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
   const [motionPreviewOpen,setMotionPreviewOpen]=useState(false);
   const [demoCrowdProfiles,setDemoCrowdProfiles] = useState({});
   
-  const demoCount=Math.max(DEMO_CROWD_SIZE,members.length);
   const allUsers = config?.pairs ? Object.keys(config.pairs) : [];
   const submittedUsers = allUsers.filter(u => profiles?.[u]?.giftSubmitted);
   const pendingUsers = allUsers.filter(u => !profiles?.[u]?.giftSubmitted);
@@ -1206,10 +1223,10 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
       </div>
 
       <div className="bg-blue-50 border border-blue-200 rounded p-3 mb-3 flex flex-wrap gap-2 items-center justify-between">
-        <div><strong className="text-sm text-blue-800">🧪 {demoCount}명 미니룸 동작 테스트</strong><p className="text-[11px] text-blue-600">구성원 이름으로 미니룸 화면 테스트</p></div>
-        <button type="button" onClick={()=>{setDemoCrowdProfiles(buildDemoCrowdProfiles(members,profiles));setCrowdTest(true);}} className="bg-blue-600 text-white font-bold rounded px-4 py-2.5 text-sm">{demoCount}명 테스트 시작</button>
+        <div><strong className="text-sm text-blue-800">🧪 {DEMO_CROWD_SIZE}명 미니룸 동작 테스트</strong><p className="text-[11px] text-blue-600">구성원 이름으로 미니룸 화면 테스트</p></div>
+        <button type="button" onClick={()=>{setDemoCrowdProfiles(buildDemoCrowdProfiles(members,profiles));setCrowdTest(true);}} className="bg-blue-600 text-white font-bold rounded px-4 py-2.5 text-sm">{DEMO_CROWD_SIZE}명 테스트 시작</button>
       </div>
-      {crowdTest&&<section className="mb-4 rounded border border-blue-200 bg-white p-2" aria-label={`${demoCount}명 미니룸 테스트`}>
+      {crowdTest&&<section className="mb-4 rounded border border-blue-200 bg-white p-2" aria-label={`${DEMO_CROWD_SIZE}명 미니룸 테스트`}>
         <div className="bg-white max-w-6xl w-full mx-auto rounded p-3 flex flex-col min-h-0 max-h-full overflow-y-auto custom-scrollbar">
           <div className="flex items-center justify-between gap-3 pb-2"><div><strong className="text-sm text-blue-800">🧪 테스트 미니미 {Object.keys(demoCrowdProfiles).length}명</strong><p className="text-[11px] text-slate-500">이름은 미니미를 누르면 보여요.</p></div><button onClick={()=>{setMotionPreviewOpen(false);setCrowdTest(false);setDemoCrowdProfiles({});}} className="bg-slate-800 text-white rounded px-4 py-2 text-sm font-bold shrink-0">테스트 종료 ✕</button></div>
           <details onToggle={event=>setMotionPreviewOpen(event.currentTarget.open)} className="mb-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 shrink-0">
@@ -1485,7 +1502,8 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
     const drawSprite=person=>{
       const offset=(person.action==='sit'?4:0)+(reducedMotion?0:poseFrame(person.action,world.time-person.actionStarted,person.tempo));
       const width=44*appearance.scale*(mobile.matches?1.16:1),height=width*650/800;
-      const mirror=person.action==='walk'&&person.facing===-1;
+      // Walking sprites face left in the source atlas.
+      const mirror=person.action==='walk'&&person.facing===1;
       if(mirror){
         context.save();
         context.translate(person.x*2,0);
