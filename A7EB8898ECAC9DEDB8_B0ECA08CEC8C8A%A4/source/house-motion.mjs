@@ -26,16 +26,21 @@ export function poseFrame(action,elapsed,tempo=1){
 }
 export function roomSeed(id){return [...id].reduce((v,c)=>(v*31+c.charCodeAt(0))>>>0,7);}
 export function makeHouseRoute(id,index,count){
- const value=roomSeed(id),lane=index%3-1;
- const upperY=180+lane*7,lowerY=526+lane*23;
+ const value=roomSeed(id),rng={seed:value};
+ const between=(min,max)=>min+random(rng)*(max-min);
  const stairs=[[258,185],[242,217],[218,258],[183,308],[148,358],[111,417],[91,480]];
  const stairLane=offset=>stairs.map(([x,y])=>[x+offset,y]);
- const descent=stairLane(-7+lane*3),ascent=stairLane(11+lane*3).reverse();
- const upper=[390+value%230,upperY];
- const points=[upper,[745-value%90,upperY],[350,upperY],...descent,
-  [118,lowerY],[367,lowerY],[744+value%70,lowerY],[750,417+lane*6],
-  [380,410+lane*6],[255,448+lane*8],[185,lowerY],[110,502],...ascent,[330,upperY],upper];
- const stairStart=3,stairEnd=stairStart+descent.length-1;
+ const descent=stairLane(between(-13,-3)),ascent=stairLane(between(4,14)).reverse();
+ const upper=[between(370,540),between(173,194)];
+ const upstairs=[[between(590,790),between(173,194)],[between(322,385),between(177,193)]];
+ const right=between(600,820),front=between(501,584);
+ const downstairs=index%2===0
+  ? [[between(164,224),between(493,530)],[between(320,470),front],[right,between(509,582)],
+     [between(657,775),between(412,441)],[between(371,470),between(410,442)],[between(244,330),between(463,505)]]
+  : [[between(194,248),between(483,515)],[between(290,410),between(413,452)],
+     [between(610,758),between(414,449)],[right,front],[between(350,510),between(506,585)]];
+ const points=[upper,...upstairs,...descent,...downstairs,[between(109,130),between(493,512)],...ascent,[between(295,345),between(176,191)],upper];
+ const stairStart=1+upstairs.length,stairEnd=stairStart+descent.length-1;
  const ascentStart=points.length-ascent.length-2,ascentEnd=ascentStart+ascent.length-1;
  const distances=[0];
  for(let i=1;i<points.length;i++){
@@ -83,7 +88,7 @@ export function stepCrowd(world,dt){
  const {agents,time}=world;
  for(const a of agents){
   if(time<a.nextAction)continue;
-  if(a.action==='walk'&&onStairs(a))continue;
+  if(a.action==='walk'&&(onStairs(a)||agents.some(other=>other!==a&&other.action==='sit'&&overlaps(a,other,{x:40,y:28}))))continue;
   a.action=a.action==='walk'?'sit':'walk';
   a.actionStarted=time;
   a.nextAction=time+(a.action==='sit'?8+random(a)*9:15+random(a)*23);
