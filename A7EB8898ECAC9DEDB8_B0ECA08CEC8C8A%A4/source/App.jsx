@@ -843,11 +843,11 @@ export default function App() {
   const myProfile = visibleProfiles[myName] || { nickname: myName, avatar: '🎅' };
 
   return (
-    <div className="h-[100dvh] w-full bg-[#d1d5db] cyworld-font relative overflow-hidden sm:py-4 sm:px-2 bg-[radial-gradient(#9ca3af_1px,transparent_1px)] bg-[size:12px_12px] flex items-center justify-center">
+    <div data-wide-view={isAdmin&&presentationOpen?'true':undefined} className="h-[100dvh] w-full bg-[#d1d5db] cyworld-font relative overflow-hidden sm:py-4 sm:px-2 bg-[radial-gradient(#9ca3af_1px,transparent_1px)] bg-[size:12px_12px] flex items-center justify-center">
       
       <SpriteDefinitions />
       {/* Cyworld Outer Box - 폰 화면에 꽉 차게 */}
-      <div className="w-full h-full max-w-6xl sm:h-[94vh] bg-[#47a6b8] p-1 sm:p-2 sm:rounded-2xl sm:shadow-2xl sm:border-2 sm:border-slate-500 relative flex flex-col">
+      <div className="mini-home-shell w-full h-full max-w-6xl sm:h-[94vh] bg-[#47a6b8] p-1 sm:p-2 sm:rounded-2xl sm:shadow-2xl sm:border-2 sm:border-slate-500 relative flex flex-col">
         
         {/* Inner White Box */}
         <div className="bg-white sm:border-2 border-dashed border-slate-400 sm:rounded-xl flex-1 flex flex-col relative overflow-hidden">
@@ -1096,6 +1096,12 @@ export default function App() {
         .room-edit { border: 1px solid #cdbba7; background: #fff; border-radius: 3px; padding: 2px 7px; color: #806757; font-size: 10px; white-space: nowrap; }
         .room-scroll { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; touch-action: pan-x pan-y; }
         .room-stage { position: relative; isolation: isolate; z-index:0; width:1000px;height:800px;margin:auto; }
+        @media (min-width: 1024px) {
+          [data-wide-view="true"] { padding:0; }
+          [data-wide-view="true"] .mini-home-shell { max-width:none; height:100%; border-radius:0; }
+          [data-wide-view="true"] .room-fit .room-stage { width:100%; }
+          [data-wide-view="true"] .room-expanded .room-stage { width:max(100%, 1600px); height:auto; aspect-ratio:1000 / 800; }
+        }
         .room-fit .room-stage { width:min(100%,1000px);height:auto;aspect-ratio:1000 / 800; }
         .room-scene {display:block;width:100%;height:100%;background:#f4f0e9;}
         .room-background-layer {opacity:.86;filter:saturate(.90);}
@@ -1511,7 +1517,7 @@ function PresentationView({profiles,treePosts,photos,photosReady,messages,hasDra
         {revealed?'공개 중지':'마니또 공개하기'}
       </button>
     </div>
-    <div className="mx-auto max-w-6xl">
+    <div className="w-full">
       {tab==='home'&&<ChristmasMiniroom profiles={profiles} treePosts={treePosts} demoMode/>}
       {tab==='photos'&&<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {!photosReady&&<p role="status">사진첩을 불러오는 중…</p>}
