@@ -5,7 +5,7 @@ import { AVATAR_ATLASES } from './avatars.js';
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithEmailAndPassword, createUserWithEmailAndPassword, linkWithCredential, EmailAuthProvider, onAuthStateChanged, signOut } from 'firebase/auth';
-import { getFirestore, doc, collection, query, orderBy, limit, onSnapshot, getDocsFromServer, startAfter, getDoc, getDocFromServer, runTransaction, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, doc, collection, query, orderBy, limit, onSnapshot, getDocsFromServer, startAfter, getDoc, getDocFromServer, runTransaction, setDoc, deleteDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { Gift, MessageCircle, Snowflake, Users, ArrowRight, AlertCircle, LogOut, Music, Heart, Settings, Lock, Plus, Trash2, Edit2 } from 'lucide-react';
 
 // 관리자 비밀번호나 직원 참여 링크는 소스 코드에 저장하지 않습니다.
@@ -578,6 +578,27 @@ export default function App() {
     await saveMembers(members,new Set(members.map(member=>member.id)));
     showModal('전체 비밀번호 초기화 완료',`${members.length}명의 번호를 초기화했습니다. 모두 공통 주소에서 '처음 등록'으로 새 4자리 번호를 정해주세요.`);
   },true);
+  const handleResetFeed = kind => runAction('admin-reset-feed', async () => {
+    if (!isAdmin) return false;
+    const isPhoto = kind === 'photos';
+    const label = isPhoto ? '사진첩' : '방명록';
+    if (!isPhoto && !roundId) {
+      showModal('방명록 초기화 완료', '현재 회차에 초기화할 글이 없어요.');
+      return;
+    }
+    const feed = isPhoto ? photosCollection() : eventsCollection(roundId);
+    const page = query(feed, limit(100));
+    let removed = 0;
+    while (true) {
+      const snapshot = await getDocsFromServer(page);
+      if (snapshot.empty) break;
+      const batch = writeBatch(db);
+      snapshot.docs.forEach(post => batch.delete(post.ref));
+      await batch.commit();
+      removed += snapshot.size;
+    }
+    showModal(`${label} 초기화 완료`, `게시물 ${removed}개를 삭제했어요.`);
+  }, true);
   const migrationAttempt = useRef('');
   useEffect(() => {
     if (!isAdmin || !membersReady || !configReady || !members.length || members.every(m => m.nameKey && m.loginEmail)) return;
@@ -822,6 +843,7 @@ export default function App() {
     if (type === 'message' && (!clean || clean.length > 1000)) throw new Error('메시지는 1~1,000자로 입력해주세요.');
     const id = makeId(), target = getMyTarget();
     await setDoc(doc(eventsCollection(roundId), id), { id, type, target, targetId: assignment.targetId, text: type === 'message' ? clean : '',
+      ...(type==='message'&&profiles[myName]?.nickname?{writerNickname:profiles[myName].nickname}:{}),
       hint: type === 'message' && HINTS.some(item => item.icon === hint) ? hint : '', timestamp: serverTimestamp(), roundId });
     if (identityRef.current !== identity) return;
     if (type === 'activity') showModal('성공!', `${target}님 자리로 몰래 다녀간 것을 알렸습니다! 🎁`);
@@ -908,6 +930,7 @@ export default function App() {
                 onResetMinime={handleResetMinime}
                 onResetAllMinimes={handleResetAllMinimes}
                 onResetAllPins={handleResetAllPins}
+                onResetFeed={handleResetFeed}
                 onUndoGift={handleUndoGift}
               />
             )}
@@ -939,7 +962,7 @@ export default function App() {
               />
             )}
             {((isAdmin&&!presentationOpen)||viewState==='dashboard')&&activeTab==='photos'&&<PhotoChatView isRevealed={publicConfig.isRevealed} posts={photoPosts} ready={photosReady} onPost={handlePhotoPost} onDelete={handlePhotoDelete} onError={fail} myMemberId={assignment?.memberId||'admin'} isAdmin={isAdmin} profiles={visibleProfiles} limitCount={photoLimit} onMore={()=>setPhotoLimit(value=>Math.min(150,value+30))}/>}
-            {((isAdmin&&!presentationOpen)||viewState==='dashboard')&&activeTab==='guestbook'&&<GuestbookView key={guestbookIncoming?'incoming':'all'} initialMineOnly={guestbookIncoming} events={visibleEvents} profiles={visibleProfiles} pairs={config.pairs} isRevealed={config.isRevealed} myName={myName} onWrite={isAdmin?null:()=>setShowMessageModal(true)}/>}
+            {((isAdmin&&!presentationOpen)||viewState==='dashboard')&&activeTab==='guestbook'&&<GuestbookView key={guestbookIncoming?'incoming':'all'} initialMineOnly={guestbookIncoming} events={visibleEvents} profiles={visibleProfiles} pairs={config.pairs} isRevealed={config.isRevealed} myName={myName} replyContext={!isAdmin&&isLoggedIn?{roundId,memberId:assignment.memberId,ownTargetId:assignment.targetId}:null} onWrite={isAdmin?null:()=>setShowMessageModal(true)}/>}
           </main>
 
         </div>
@@ -1009,10 +1032,22 @@ export default function App() {
               <h3 className="text-md font-bold mb-1 text-orange-600 flex items-center">
                 <MessageCircle className="mr-2" size={18} /> 일촌평 남기기
               </h3>
-              <p className="text-xs text-slate-500 mb-4">
-                내 마니또({getMyTarget()})에게 익명으로 메시지와 힌트를 남깁니다.
+              <p className="text-xs text-slate-500">
+                내가 챙길 사람({getMyTarget()})에게 별명으로 메시지와 힌트를 남깁니다.
+              </p>
+              <p className="mt-1 mb-4 text-xs font-semibold text-orange-700">
+                갖고 싶은 선물이 뭔지 여쭤봐요!
               </p>
               
+              {visibleEvents.some(event=>event.type==='message'&&event.targetId===assignment?.targetId)&&
+                <details className="mb-4 max-h-48 overflow-y-auto rounded border bg-white p-2">
+                  <summary className="cursor-pointer text-sm font-bold">내가 보낸 일촌평과 비밀 답글</summary>
+                  {visibleEvents.filter(event=>event.type==='message'&&event.targetId===assignment?.targetId).map(event=>
+                    <div key={event.id} className="mt-2 border-t pt-2">
+                      <p className="whitespace-pre-wrap break-words text-xs">{event.text}</p>
+                      <PrivateReplies roundId={roundId} eventId={event.id} role="manito"/>
+                    </div>)}
+                </details>}
               <div className="mb-4">
                 <label className="text-xs font-bold text-slate-700 mb-2 block">선물 힌트 이모티콘 🎁</label>
                 <div className="flex space-x-2">
@@ -1177,7 +1212,7 @@ function buildDemoCrowdProfiles(members, profiles) {
   }));
 }
 
-function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profiles, members, onUpdateMembers, onResetPin, onResetMinime, onResetAllMinimes, onResetAllPins, onUndoGift }) {
+function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profiles, members, onUpdateMembers, onResetPin, onResetMinime, onResetAllMinimes, onResetAllPins, onResetFeed, onUndoGift }) {
   const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [bulkText, setBulkText] = useState('');
   const [showSingleAdd, setShowSingleAdd] = useState(false);
@@ -1187,13 +1222,30 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
   const [bulkReset,setBulkReset]=useState(null);
   const [resetText,setResetText]=useState('');
   const [resetBusy,setResetBusy]=useState(false);
-  const resetPhrase=bulkReset==='pins'?'전체비밀번호초기화':'전체미니미초기화';
+  const resetTitles = {
+    pins: '전체 비밀번호 초기화',
+    minimes: '전체 미니미 초기화',
+    guestbook: '방명록 초기화',
+    photos: '사진첩 초기화',
+  };
+  const resetDescriptions = {
+    pins: `${members.length}명의 기존 로그인 연결이 해제됩니다. 각자 ‘처음 등록’에서 번호를 다시 정해야 합니다.`,
+    minimes: `${members.length}명의 미니미와 별명이 지워집니다. 기존 번호로 입장하면 캐릭터와 별명을 다시 고릅니다.`,
+    guestbook: '현재 회차의 일촌평과 활동 소식이 모두 삭제되고 비밀 답글도 볼 수 없게 됩니다. 되돌릴 수 없어요.',
+    photos: '사진첩의 모든 사진과 게시글이 삭제됩니다. 되돌릴 수 없어요.',
+  };
+  const resetPhrase = resetTitles[bulkReset]?.replaceAll(' ', '') || '';
   const beginBulkReset=kind=>{setResetText('');setBulkReset(kind);};
   const confirmBulkReset=async()=>{
     if(!bulkReset||resetBusy||resetText.trim()!==resetPhrase)return;
     setResetBusy(true);
     try {
-      const reset=bulkReset==='pins'?onResetAllPins:onResetAllMinimes;
+      const reset = {
+        pins: onResetAllPins,
+        minimes: onResetAllMinimes,
+        guestbook: () => onResetFeed('guestbook'),
+        photos: () => onResetFeed('photos'),
+      }[bulkReset];
       if(await reset())setBulkReset(null);
     } finally {setResetBusy(false);}
   };
@@ -1311,6 +1363,8 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <button type="button" onClick={()=>beginBulkReset('minimes')} className="rounded border border-orange-400 bg-white text-orange-800 font-bold px-3 py-3 text-sm hover:bg-orange-100">🎨 전체 미니미 초기화</button>
           <button type="button" onClick={()=>beginBulkReset('pins')} className="rounded border border-red-400 bg-white text-red-700 font-bold px-3 py-3 text-sm hover:bg-red-100">🔑 전체 비밀번호 초기화</button>
+          <button type="button" onClick={()=>beginBulkReset('guestbook')} className="rounded border border-red-400 bg-white text-red-700 font-bold px-3 py-3 text-sm hover:bg-red-100">방명록 초기화</button>
+          <button type="button" onClick={()=>beginBulkReset('photos')} className="rounded border border-red-400 bg-white text-red-700 font-bold px-3 py-3 text-sm hover:bg-red-100">사진첩 초기화</button>
         </div>
         <p className="text-[11px] text-amber-900 mt-2">전체 비밀번호 초기화 시 모든 직원이 '처음 등록'을 통해 4자리 번호를 다시 설정해야 합니다.</p>
       </section>
@@ -1318,10 +1372,8 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
       {bulkReset&&<div className="fixed inset-0 z-[70] bg-black/60 grid place-items-center p-4">
         <form className="w-full max-w-sm rounded bg-white p-4" role="dialog" aria-modal="true" aria-labelledby="bulk-reset-heading"
           onSubmit={event=>{event.preventDefault();confirmBulkReset();}}>
-          <h3 id="bulk-reset-heading" className="font-bold text-red-800">{bulkReset==='pins'?'전체 비밀번호 초기화':'전체 미니미 초기화'}</h3>
-          <p className="my-2 text-sm text-slate-700">{bulkReset==='pins'
-            ? `${members.length}명의 기존 로그인 연결이 해제됩니다. 각자 ‘처음 등록’에서 번호를 다시 정해야 합니다.`
-            : `${members.length}명의 미니미와 별명이 지워집니다. 기존 번호로 입장하면 캐릭터와 별명을 다시 고릅니다.`}</p>
+          <h3 id="bulk-reset-heading" className="font-bold text-red-800">{resetTitles[bulkReset]}</h3>
+          <p className="my-2 text-sm text-slate-700">{resetDescriptions[bulkReset]}</p>
           <label className="block text-sm">확인 문구 <strong>{resetPhrase}</strong>
             <input autoFocus autoComplete="off" value={resetText} onChange={event=>setResetText(event.target.value)}
               className="my-2 block w-full border border-slate-300 rounded p-2" disabled={resetBusy}/>
@@ -2719,7 +2771,7 @@ function DashboardView({ myName, myMemberId,incomingReadAt,onOpenIncoming,treePo
   );
 }
 
-function DiaryFeed({events,profiles,pairs,isRevealed,title="다이어리 (최근 소식)",emptyText="아직 다이어리가 비어있어요. 첫 번째 기록을 남겨주세요!"}) {
+function DiaryFeed({events,replyContext,profiles,pairs,isRevealed,title="다이어리 (최근 소식)",emptyText="아직 다이어리가 비어있어요. 첫 번째 기록을 남겨주세요!"}) {
   const timeAgo = (ms) => {
     if (!ms) return '';
     const diff = Math.floor((Date.now() - ms) / 1000 / 60); 
@@ -2743,10 +2795,14 @@ function DiaryFeed({events,profiles,pairs,isRevealed,title="다이어리 (최근
             </div>
           ) : (
             events.map((ev, idx) => {
-              // 찾기: ev.target이 누구의 마니또인지 (글 쓴 사람 찾기)
-              const writerRealName = isRevealed && pairs ? Object.keys(pairs).find(k => pairs[k] === ev.target) : null;
-              const nickname = writerRealName && profiles?.[writerRealName]?.nickname;
-              const writerNickname = writerRealName ? (nickname&&nickname!==writerRealName?`${nickname} (${writerRealName})`:writerRealName) : '누군가';
+              const writerRealName = isRevealed && pairs
+                ? Object.keys(pairs).find(name => pairs[name] === ev.target)
+                : null;
+              const writerAlias = ev.writerNickname
+                || (writerRealName && profiles?.[writerRealName]?.nickname);
+              const writerNickname = writerRealName
+                ? (writerAlias ? `${writerAlias}(${writerRealName})` : writerRealName)
+                : (writerAlias || '익명 마니또');
               const targetAlias = profiles?.[ev.target]?.nickname || ev.target;
               const targetNickname = isRevealed&&targetAlias!==ev.target?`${targetAlias} (${ev.target})`:targetAlias;
 
@@ -2775,6 +2831,8 @@ function DiaryFeed({events,profiles,pairs,isRevealed,title="다이어리 (최근
                           {ev.text}
                         </div>
                       )}
+                      {replyContext&&ev.type==='message'&&(ev.targetId===replyContext.memberId||ev.targetId===replyContext.ownTargetId)&&
+                        <PrivateReplies roundId={replyContext.roundId} eventId={ev.id} role={ev.targetId===replyContext.memberId?'recipient':'manito'}/>}
                     </div>
                   </div>
                 </div>
@@ -2821,10 +2879,55 @@ function PhotoChatView({readOnly=false,isRevealed=false,posts,ready,onPost,onDel
   </div>;
 }
 
-function GuestbookView({events,profiles,pairs,isRevealed,myName,onWrite,initialMineOnly=false}) {
+function PrivateReplies({roundId,eventId,role}) {
+  const [open,setOpen]=useState(false);
+  return <div className="mt-2">
+    <button type="button" aria-expanded={open} onClick={()=>setOpen(value=>!value)} className="rounded border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700">
+      {open?'비밀 답글 닫기':'비밀 답글 보기·쓰기'}
+    </button>
+    {open&&<ReplyThread roundId={roundId} eventId={eventId} role={role}/>}
+  </div>;
+}
+
+function ReplyThread({roundId,eventId,role}) {
+  const [replies,setReplies]=useState([]);
+  const [draft,setDraft]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const thread=()=>collection(db,'artifacts',appId,'rounds',roundId,'events',eventId,'replies');
+  useEffect(()=>onSnapshot(query(thread(),orderBy('createdAt','desc'),limit(100)),
+    snapshot=>setReplies(snapshot.docs.toReversed().map(item=>({...item.data(),id:item.id}))),
+    ()=>setError('비밀 답글을 불러오지 못했어요. 잠시 후 다시 열어주세요.')),[roundId,eventId]);
+  const send=async event=>{
+    event.preventDefault();
+    const text=draft.trim();
+    if(!text||busy)return;
+    setBusy(true);setError('');
+    try{
+      await setDoc(doc(thread(),makeId()),{text,role,createdAt:serverTimestamp()});
+      setDraft('');
+    }catch{setError('답글을 보내지 못했어요. 다시 시도해 주세요.');}
+    finally{setBusy(false);}
+  };
+  return <form onSubmit={send} className="mt-2 space-y-2 rounded border border-blue-200 bg-blue-50 p-3">
+    <p className="text-xs text-blue-900">이 답글은 보낸 마니또와 받은 사람만 볼 수 있어요.</p>
+    {replies.length>0&&<ol className="max-h-48 space-y-2 overflow-y-auto">
+      {replies.map(reply=><li key={reply.id} className="rounded bg-white p-2 text-xs">
+        <strong>{reply.role===role?'나':reply.role==='manito'?'나를 챙기는 마니또':'내가 챙기는 사람'}</strong>
+        <p className="mt-1 whitespace-pre-wrap break-words">{reply.text}</p>
+      </li>)}
+    </ol>}
+    <textarea aria-label="비밀 답글" maxLength={1000} value={draft} disabled={busy} onChange={event=>setDraft(event.target.value)}
+      placeholder="비밀 답글을 남겨보세요" className="block w-full rounded border border-slate-300 bg-white p-2 text-sm"/>
+    {error&&<p role="alert" className="text-xs text-red-700">{error}</p>}
+    <button type="submit" disabled={!draft.trim()||busy} className="rounded bg-blue-700 px-3 py-2 text-xs text-white disabled:opacity-50">답글 보내기</button>
+  </form>;
+}
+
+function GuestbookView({events,profiles,pairs,isRevealed,myName,onWrite,replyContext,initialMineOnly=false}) {
   const [mineOnly,setMineOnly]=useState(initialMineOnly);
   const messages=events.filter(event=>!mineOnly||event.target===myName);
-  return <div className="flex flex-col min-h-full gap-3 pb-4"><div className="flex justify-between items-center border-b border-dashed border-slate-300 pb-2"><h2 className="text-sm font-bold text-blue-700">💌 울장복 방명록</h2>{onWrite&&<button onClick={onWrite} className="text-xs bg-blue-500 text-white border border-blue-700 px-3 py-1.5">일촌평 쓰기</button>}</div><p className="text-[10px] text-slate-500">나에게 온 마니또의 한마디와 다녀간 소식을 확인해보세요.</p>{myName&&<div className="flex gap-1" role="group" aria-label="방명록 보기 필터"><button onClick={()=>setMineOnly(false)} aria-pressed={!mineOnly} className={`text-xs px-3 py-1.5 border ${!mineOnly?'bg-blue-50 border-blue-400 text-blue-700 font-bold':'bg-white border-slate-300 text-slate-500'}`}>전체 글</button><button onClick={()=>setMineOnly(true)} aria-pressed={mineOnly} className={`text-xs px-3 py-1.5 border ${mineOnly?'bg-blue-50 border-blue-400 text-blue-700 font-bold':'bg-white border-slate-300 text-slate-500'}`}>내 마니또 소식</button></div>}<DiaryFeed events={messages} profiles={profiles} pairs={pairs} isRevealed={isRevealed} title={mineOnly?'내게 남긴 마니또 소식':'우리의 방명록과 활동 소식'} emptyText={mineOnly?'아직 내게 남긴 소식이 없어요.':'아직 방명록이 비어있어요.'}/></div>;
+  return <div className="flex flex-col min-h-full gap-3 pb-4"><div className="flex justify-between items-center border-b border-dashed border-slate-300 pb-2"><h2 className="text-sm font-bold text-blue-700">💌 울장복 방명록</h2>{onWrite&&<button onClick={onWrite} className="text-xs bg-blue-500 text-white border border-blue-700 px-3 py-1.5">일촌평 쓰기</button>}</div><p className="text-[10px] text-slate-500">나에게 온 마니또의 한마디와 다녀간 소식을 확인해보세요.</p>{myName&&<div className="flex gap-1" role="group" aria-label="방명록 보기 필터"><button onClick={()=>setMineOnly(false)} aria-pressed={!mineOnly} className={`text-xs px-3 py-1.5 border ${!mineOnly?'bg-blue-50 border-blue-400 text-blue-700 font-bold':'bg-white border-slate-300 text-slate-500'}`}>전체 글</button><button onClick={()=>setMineOnly(true)} aria-pressed={mineOnly} className={`text-xs px-3 py-1.5 border ${mineOnly?'bg-blue-50 border-blue-400 text-blue-700 font-bold':'bg-white border-slate-300 text-slate-500'}`}>내 마니또 소식</button></div>}<DiaryFeed replyContext={replyContext} events={messages} profiles={profiles} pairs={pairs} isRevealed={isRevealed} title={mineOnly?'내게 남긴 마니또 소식':'우리의 방명록과 활동 소식'} emptyText={mineOnly?'아직 내게 남긴 소식이 없어요.':'아직 방명록이 비어있어요.'}/></div>;
 }
 
 function TreeOrnament({kind,color}) {
