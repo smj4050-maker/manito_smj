@@ -10,6 +10,7 @@ import { Gift, MessageCircle, Snowflake, Users, ArrowRight, AlertCircle, LogOut,
 
 // 관리자 비밀번호나 직원 참여 링크는 소스 코드에 저장하지 않습니다.
 const appId = 'manito-xmas-app';
+const ADMIN_LOGIN_NAME = '방장';
 const ADMIN_EMAIL = 'admin@manito.invalid';
 const FIREBASE_CONFIG = {
   apiKey: 'AIzaSyCgEmWxPuI3fEFRAlirb769wXtzn_UTbtk',
@@ -110,6 +111,7 @@ async function normalizeMembers(list, previous, resetId) {
   const names = new Set(), ids = new Set();
   return Promise.all(list.map(async member => {
     const name = typeof member?.name === 'string' ? member.name.trim() : '';
+    if (name === ADMIN_LOGIN_NAME) throw new Error('방장은 관리자 로그인 이름입니다. 참가 명단에서는 다른 이름을 사용해주세요.');
     const id = typeof member?.id === 'string' && member.id ? member.id : makeId();
     if (!name || name.length > 60 || names.has(name) || ids.has(id)) throw new Error('이름은 1~60자로 입력하고, 동명이인은 숫자 등으로 구분해주세요.');
     if (id.includes('/')) throw new Error('구성원 식별번호가 올바르지 않습니다.');
@@ -259,6 +261,7 @@ export default function App() {
   const [readReady,setReadReady]=useState(false);
   const [latestPhotoAt,setLatestPhotoAt]=useState(0);
   const readAttempts=useRef(new Set());
+  const [presentationOpen,setPresentationOpen]=useState(false);
   const [photoPosts,setPhotoPosts]=useState([]);
   const [treePosts,setTreePosts]=useState([]);
   const [photosReady,setPhotosReady]=useState(false);
@@ -349,6 +352,7 @@ export default function App() {
 
   useEffect(() => {
     setSession(null); setSessionReady(false); setAssignment(null); setRevealedPairs({});
+    setPresentationOpen(isAdmin);
     setViewState(isAdmin ? 'admin' : 'login');
     // 저장된 계정은 Firebase 인증 UID에만 연결됩니다. 이름만 바꿔 다른 계정으로 전환할 수 없습니다.
     if (!user || user.isAnonymous || isAdmin) { setSessionReady(true); return; }
@@ -616,7 +620,7 @@ export default function App() {
 
   const handleAdminSetup = async () => runAction('admin', async () => {
     if (members.some(m => !m.nameKey || !m.loginEmail)) throw new Error('명단의 로그인 설정 중입니다. 잠시 후 다시 눌러주세요.');
-    const normalized = await normalizeMembers(members, members);
+    const normalized = await normalizeMembers(members.filter(member => member.name.trim() !== ADMIN_LOGIN_NAME), members);
     if (normalized.length < 2) throw new Error('최소 2명 이상의 구성원을 등록해주세요.');
     if (publicConfig.hasDraw && !window.confirm('다시 배정하면 기존 배정과 선물 준비 현황이 초기화됩니다. 다시 배정할까요?')) return false;
     const shuffled = [...normalized];
@@ -637,7 +641,7 @@ export default function App() {
         transaction.set(inviteDoc(member.inviteId), { memberId: member.id, name: member.name, active: true, targetId: target.id, targetName: target.name, targetDepartment: target.department, roundId: newRoundId });
         transaction.set(profileDoc(member.id), { name: member.name, giftSubmitted: false, giftRoundId: newRoundId }, { merge: true });
       }
-      transaction.set(dataDoc('settings_members'), { list: normalized });
+      transaction.set(dataDoc('settings_members'), { list: members });
       transaction.set(dataDoc('reveal'), { pairs });
       transaction.set(dataDoc('settings_config'), { hasDraw: true, isRevealed: false, roundId: newRoundId });
     });
@@ -648,6 +652,11 @@ export default function App() {
     const cleanName = name.trim();
     if (!cleanName) throw new Error('이름을 입력해주세요.');
     if (!/^\d{4}$/.test(pin)) throw new Error('번호는 숫자 4자리로 입력해주세요.');
+    if (cleanName === ADMIN_LOGIN_NAME) {
+      if (registering) throw new Error('방장은 로그인 탭에서 입장해주세요.');
+      await signInWithEmailAndPassword(auth, ADMIN_EMAIL, `manito-${pin}`);
+      return;
+    }
     if (registering && pin !== confirmation) throw new Error('두 번 입력한 번호가 다릅니다. 다시 확인해주세요.');
     if (!publicConfig.hasDraw) throw new Error('아직 방장이 마니또 설정을 완료하지 않았습니다. 기다려주세요!');
     const nameKey = await hashToken(cleanName), lookup = await getDocFromServer(loginDoc(nameKey));
@@ -746,12 +755,13 @@ export default function App() {
   const goDashboard = async()=>{if(drawStage==='revealed' && await markDrawSeen())setViewState('dashboard');};
 
   const toggleReveal = async () => runAction('admin', async () => {
-    let next;
+    const next = !publicConfig.isRevealed;
+    if(next&&!window.confirm('마니또 배정 결과를 발표 화면과 참가자 화면에 공개할까요?'))return false;
     await runTransaction(db, async transaction => {
       const snapshot = await transaction.get(dataDoc('settings_config'));
       const current = snapshot.exists() ? snapshot.data() : {};
       if (!current.hasDraw || current.roundId !== roundId) throw new Error('먼저 배정 상태를 확인해주세요.');
-      next = !current.isRevealed;
+      if(Boolean(current.isRevealed)===next)return;
       transaction.update(dataDoc('settings_config'), { isRevealed: next });
     });
     showModal('알림', `마니또 정체가 ${next ? '공개' : '비공개'} 되었습니다! 🎄`);
@@ -866,7 +876,7 @@ export default function App() {
               <Gift className="text-red-500 mr-1" size={18} /> 
               울장복의 미니홈피
             </div>
-            {isLoggedIn && (
+            {(isLoggedIn||isAdmin) && (
               <button onClick={handleLogout} className="text-[10px] sm:text-xs bg-slate-200 px-2 py-1 rounded text-slate-600 border border-slate-300 hover:bg-slate-300">
                 로그아웃
               </button>
@@ -880,8 +890,9 @@ export default function App() {
 
           {/* Dynamic Views (Content Area - 화면에 맞게 스크롤) */}
           <main data-testid="main-scroll" className="flex-1 min-h-0 flex flex-col p-2 sm:p-4 bg-slate-50 border-t-2 border-solid border-slate-400 sm:rounded-b-xl overflow-y-auto custom-scrollbar">
-            {viewState === 'admin' && activeTab === 'home' && (
-              <AdminView 
+            {isAdmin&&<div className="mb-2 flex justify-end"><button type="button" className="room-edit" onClick={()=>{setActiveTab('home');setPresentationOpen(value=>!value);}}>{presentationOpen?'방장 관리':'관람 화면'}</button></div>}
+            {viewState === 'admin' && activeTab === 'home' && !presentationOpen && (
+              <AdminView
                 onSetup={handleAdminSetup} 
                 isRevealed={config?.isRevealed} 
                 onToggleReveal={toggleReveal} 
@@ -897,9 +908,14 @@ export default function App() {
                 onUndoGift={handleUndoGift}
               />
             )}
+            {isAdmin&&presentationOpen&&<PresentationView profiles={visibleProfiles} treePosts={treePosts}
+              photos={photoPosts} photosReady={photosReady} messages={events.filter(event=>event.type==='message').length}
+              hasDraw={publicConfig.hasDraw} revealed={publicConfig.isRevealed}
+              pairs={publicConfig.isRevealed?revealedPairs:null} onToggleReveal={toggleReveal}
+              activeTab={activeTab}/>}
             {viewState === 'login' && <LoginView onLogin={handleLogin} onGoAdmin={() => setShowAdminAuth(true)} />}
             {viewState === 'profileSetup' && <ProfileSetupView onSetup={handleProfileSetup} />}
-            {viewState === 'draw' && <DrawView key={identity} target={getMyTarget()} targetDepartment={assignment?.targetDepartment} stage={drawStage} onStart={startDraw} onNext={goDashboard} profiles={visibleProfiles} />}
+            {isLoggedIn && viewState === 'draw' && <DrawView key={identity} target={getMyTarget()} targetDepartment={assignment?.targetDepartment} stage={drawStage} onStart={startDraw} onNext={goDashboard} profiles={visibleProfiles} />}
             {viewState === 'dashboard' && activeTab === 'home' && (
               <DashboardView 
                 myName={myName}
@@ -919,8 +935,8 @@ export default function App() {
                 onGiftSubmit={handleGiftSubmit}
               />
             )}
-            {(isAdmin||viewState==='dashboard')&&activeTab==='photos'&&<PhotoChatView posts={photoPosts} ready={photosReady} onPost={handlePhotoPost} onDelete={handlePhotoDelete} onError={fail} myMemberId={assignment?.memberId||'admin'} isAdmin={isAdmin} profiles={visibleProfiles} limitCount={photoLimit} onMore={()=>setPhotoLimit(value=>Math.min(150,value+30))}/>}
-            {(isAdmin||viewState==='dashboard')&&activeTab==='guestbook'&&<GuestbookView key={guestbookIncoming?'incoming':'all'} initialMineOnly={guestbookIncoming} events={visibleEvents} profiles={visibleProfiles} pairs={config.pairs} isRevealed={config.isRevealed} myName={myName} onWrite={isAdmin?null:()=>setShowMessageModal(true)}/>}
+            {((isAdmin&&!presentationOpen)||viewState==='dashboard')&&activeTab==='photos'&&<PhotoChatView posts={photoPosts} ready={photosReady} onPost={handlePhotoPost} onDelete={handlePhotoDelete} onError={fail} myMemberId={assignment?.memberId||'admin'} isAdmin={isAdmin} profiles={visibleProfiles} limitCount={photoLimit} onMore={()=>setPhotoLimit(value=>Math.min(150,value+30))}/>}
+            {((isAdmin&&!presentationOpen)||viewState==='dashboard')&&activeTab==='guestbook'&&<GuestbookView key={guestbookIncoming?'incoming':'all'} initialMineOnly={guestbookIncoming} events={visibleEvents} profiles={visibleProfiles} pairs={config.pairs} isRevealed={config.isRevealed} myName={myName} onWrite={isAdmin?null:()=>setShowMessageModal(true)}/>}
           </main>
 
         </div>
@@ -1222,6 +1238,7 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
         </button>
       </div>
 
+
       <div className="bg-blue-50 border border-blue-200 rounded p-3 mb-3 flex flex-wrap gap-2 items-center justify-between">
         <div><strong className="text-sm text-blue-800">🧪 {DEMO_CROWD_SIZE}명 미니룸 동작 테스트</strong><p className="text-[11px] text-blue-600">구성원 이름으로 미니룸 화면 테스트</p></div>
         <button type="button" onClick={()=>{setDemoCrowdProfiles(buildDemoCrowdProfiles(members,profiles));setCrowdTest(true);}} className="bg-blue-600 text-white font-bold rounded px-4 py-2.5 text-sm">{DEMO_CROWD_SIZE}명 테스트 시작</button>
@@ -1473,6 +1490,54 @@ function ProfileSetupView({onSetup,initialProfile,onCancel}) {
     </div>
   </div>;
 }
+function PresentationView({profiles,treePosts,photos,photosReady,messages,hasDraw,revealed,pairs,onToggleReveal,activeTab}) {
+  const [showResults,setShowResults]=useState(false);
+  useEffect(()=>setShowResults(false),[activeTab]);
+  const tab=showResults&&revealed?'results':activeTab;
+  const [revealBusy,setRevealBusy]=useState(false);
+  const reveal=async()=>{
+    setRevealBusy(true);
+    try {
+      if(await onToggleReveal())setShowResults(!revealed);
+    } finally {setRevealBusy(false);}
+  };
+  return <section className="min-w-0 space-y-3" aria-label="방장 관람 화면">
+    <div className="flex flex-wrap justify-end gap-2">
+      {revealed&&<button type="button" onClick={()=>setShowResults(value=>!value)} className="rounded border bg-white px-3 py-2 text-sm">
+        {showResults?'돌아가기':'배정표 보기'}
+      </button>}
+      <button type="button" disabled={!hasDraw||revealBusy} onClick={reveal}
+        className="rounded bg-red-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">
+        {revealed?'공개 중지':'마니또 공개하기'}
+      </button>
+    </div>
+    <div className="mx-auto max-w-6xl">
+      {tab==='home'&&<ChristmasMiniroom profiles={profiles} treePosts={treePosts} demoMode/>}
+      {tab==='photos'&&<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {!photosReady&&<p role="status">사진첩을 불러오는 중…</p>}
+        {photosReady&&!photos.some(post=>post.image)&&<p>아직 올라온 사진이 없어요.</p>}
+        {photos.filter(post=>post.image).map(post=><figure key={post.id} className="overflow-hidden rounded-lg bg-black/25">
+          <img src={post.image} alt={post.text||'사진첩 사진'} loading="lazy" className="h-64 w-full object-contain"/>
+          {(post.text||post.nickname)&&<figcaption className="break-words px-3 py-2">{post.nickname}{post.text&&<p>{post.text}</p>}</figcaption>}
+        </figure>)}
+      </div>}
+      {tab==='results'&&revealed&&<div className="rounded-xl border bg-white p-5">
+        <h3 className="mb-4 text-center text-2xl font-bold">마니또 배정표</h3>
+        <ul aria-label="왼쪽 사람은 오른쪽 사람의 마니또" className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          {Object.entries(pairs||{}).sort(([a],[b])=>a.localeCompare(b,'ko')).map(([giver,recipient])=>
+            <li key={giver} className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded bg-slate-100 p-3 text-center text-lg">
+              <span>{giver}</span><span aria-label="가 챙긴 사람">→</span><strong>{recipient}</strong>
+            </li>)}
+        </ul>
+      </div>}
+      {tab==='guestbook'&&<div className="mx-auto max-w-lg rounded-xl border bg-white p-6 text-center">
+        <p className="text-2xl font-bold">지금까지 일촌평 {messages}개</p>
+        <p className="mt-3">휴대폰에서 마니또 사이트에 로그인한 뒤 <strong>일촌평</strong>을 눌러 내가 챙길 사람에게 한마디를 남겨요.</p>
+      </div>}
+    </div>
+  </section>;
+}
+
 function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSave,onTreeDelete,demoMode=false}) {
   const [selected,setSelected]=useState(null),[expanded,setExpanded]=useState(false),[treeOpen,setTreeOpen]=useState(false),[selectedNote,setSelectedNote]=useState(null);
   const [systemReducedMotion,setSystemReducedMotion]=useState(()=>window.matchMedia?.('(prefers-reduced-motion: reduce)').matches||false);
@@ -1590,7 +1655,7 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
           </g>
         </svg>
         {canvasMode&&<canvas ref={crowdCanvas} aria-hidden="true" width={1000} height={650} className="absolute inset-0 w-full h-full pointer-events-none"/>}
-        {notes.map((note,index)=>{const point=ornamentPoint(index);return <button key={note.memberId} type="button" className="tree-note-hit" aria-label={`${note.nickname}님의 트리 장식`} style={{left:`${point.x/10}%`,top:`${point.y/6.5}%`}} onClick={()=>setSelectedNote(note)}/>;})}
+        {!demoMode&&notes.map((note,index)=>{const point=ornamentPoint(index);return <button key={note.memberId} type="button" className="tree-note-hit" aria-label={`${note.nickname}님의 트리 장식`} style={{left:`${point.x/10}%`,top:`${point.y/6.5}%`}} onClick={()=>setSelectedNote(note)}/>;})}
       </div>
     </div>
     {systemReducedMotion&&<button type="button" className="room-edit m-2" aria-pressed={playMotion}
