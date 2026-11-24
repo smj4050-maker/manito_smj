@@ -841,9 +841,11 @@ export default function App() {
     const clean = String(text).trim();
     if (!['activity', 'message'].includes(type)) throw new Error('활동 종류를 확인해주세요.');
     if (type === 'message' && (!clean || clean.length > 1000)) throw new Error('메시지는 1~1,000자로 입력해주세요.');
+    const writerNickname = profiles[myName]?.nickname;
+    if (type === 'message' && !writerNickname?.trim()) throw new Error('내 미니미에서 별명을 먼저 설정해주세요.');
     const id = makeId(), target = getMyTarget();
     await setDoc(doc(eventsCollection(roundId), id), { id, type, target, targetId: assignment.targetId, text: type === 'message' ? clean : '',
-      ...(type==='message'&&profiles[myName]?.nickname?{writerNickname:profiles[myName].nickname}:{}),
+      ...(type === 'message' ? { writerNickname } : {}),
       hint: type === 'message' && HINTS.some(item => item.icon === hint) ? hint : '', timestamp: serverTimestamp(), roundId });
     if (identityRef.current !== identity) return;
     if (type === 'activity') showModal('성공!', `${target}님 자리로 몰래 다녀간 것을 알렸습니다! 🎁`);
@@ -2803,8 +2805,7 @@ function DiaryFeed({events,replyContext,profiles,pairs,isRevealed,title="다이�
               const writerNickname = writerRealName
                 ? (writerAlias ? `${writerAlias}(${writerRealName})` : writerRealName)
                 : (writerAlias || '익명 마니또');
-              const targetAlias = profiles?.[ev.target]?.nickname || ev.target;
-              const targetNickname = isRevealed&&targetAlias!==ev.target?`${targetAlias} (${ev.target})`:targetAlias;
+
 
               return (
                 <div key={ev.id} className="bg-white border border-slate-300 text-[10px] sm:text-xs">
@@ -2821,9 +2822,9 @@ function DiaryFeed({events,replyContext,profiles,pairs,isRevealed,title="다이�
                     <div className="flex-1">
                       <p className="text-slate-800 font-medium mb-1">
                         {ev.type === 'activity' ? (
-                          <><span className="font-bold text-blue-600">'{targetNickname}'</span> 님의 마니또{writerRealName&&<> <strong>{writerNickname}</strong></>}가 다녀갔습니다! 본인 자리를 확인해보세요! 🏃💨</>
+                          <><span className="font-bold text-blue-600">{ev.target} 님</span>의 마니또{writerRealName&&<> <strong>{writerNickname}</strong></>}가 다녀갔습니다! 본인 자리를 확인해보세요! 🏃💨</>
                         ) : (
-                          <><span className="font-bold text-orange-600">{writerNickname}</span>가 <span className="font-bold text-blue-600">'{targetNickname}'</span> 님에게 {ev.type === 'visit' ? '다녀갔어요~' : '일촌평을 남겼어요!'}</>
+                          <><span className="font-bold text-orange-600">{writerNickname}</span>가 <span className="font-bold text-blue-600">{ev.target} 님</span>에게 {ev.type === 'visit' ? '다녀갔어요~' : '일촌평을 남겼어요!'}</>
                         )}
                       </p>
                       {ev.type === 'message' && ev.text && (
