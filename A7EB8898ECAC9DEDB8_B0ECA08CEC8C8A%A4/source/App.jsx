@@ -5,7 +5,7 @@ import { AVATAR_ATLASES } from './avatars.js';
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithEmailAndPassword, createUserWithEmailAndPassword, linkWithCredential, EmailAuthProvider, onAuthStateChanged, signOut } from 'firebase/auth';
-import { getFirestore, doc, collection, query, orderBy, limit, onSnapshot, getDoc, getDocFromServer, runTransaction, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, doc, collection, query, orderBy, limit, onSnapshot, getDocsFromServer, startAfter, getDoc, getDocFromServer, runTransaction, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { Gift, MessageCircle, Snowflake, Users, ArrowRight, AlertCircle, LogOut, Music, Heart, Settings, Lock, Plus, Trash2, Edit2 } from 'lucide-react';
 
 // 관리자 비밀번호나 직원 참여 링크는 소스 코드에 저장하지 않습니다.
@@ -434,11 +434,11 @@ export default function App() {
 
   useEffect(()=>{
     setPhotoPosts([]);setPhotosReady(false);
-    if(activeTab!=='photos' || (!isAdmin&&!isLoggedIn))return;
+    if(activeTab!=='photos' || (isAdmin?presentationOpen:!isLoggedIn))return;
     return onSnapshot(query(photosCollection(),orderBy('createdAt','desc'),limit(photoLimit)),snap=>{
       setPhotoPosts(snap.docs.map(item=>{const post=item.data({serverTimestamps:'estimate'});return {...post,id:item.id,createdAt:post.createdAt?.toMillis?.()||0};}));setPhotosReady(true);
     },error=>{setPhotosReady(true);fail(error);});
-  },[user?.uid,isAdmin,isLoggedIn,activeTab,photoLimit]);
+  },[user?.uid,isAdmin,isLoggedIn,activeTab,photoLimit,presentationOpen]);
 
   useEffect(() => {
     setEvents([]);
@@ -886,12 +886,15 @@ export default function App() {
           {/* Tabs */}
           <div className="flex px-3 space-x-1 mb-1 bg-white shrink-0" role="tablist" aria-label="미니홈피 메뉴">
             {[['home','홈'],['photos','사진첩'],['guestbook','방명록']].map(([tab,label])=><button key={tab} role="tab" aria-label={label} aria-selected={activeTab===tab} disabled={!isAdmin&&viewState!=='dashboard'} onClick={()=>{if(tab==='guestbook')setGuestbookIncoming(false);setActiveTab(tab);}} className={activeTab===tab?'bg-white border-t border-l border-r border-slate-400 rounded-t-lg px-3 py-1 text-xs sm:text-sm font-bold text-blue-600 z-10 -mb-[2px]':'bg-slate-200 border-t border-l border-r border-slate-300 rounded-t-lg px-3 py-1 text-xs sm:text-sm text-slate-500 z-0'}>{label}{((tab==='photos'&&activeTab!=='photos'&&latestPhotoAt>readState.photosAt)||(tab==='guestbook'&&activeTab!=='guestbook'&&latestGuestAt>readState.guestbookAt))&&<span className="tab-new" aria-label={`${label} 새 글`}>NEW</span>}</button>)}
+            {isAdmin&&<button type="button" className="ml-auto rounded-t border border-slate-400 bg-[#225746] px-3 py-1 text-xs font-bold text-white sm:text-sm"
+              onClick={()=>{setActiveTab('home');setPresentationOpen(value=>!value);}}>
+              {presentationOpen?'구성원 관리':'관람 화면으로'}
+            </button>}
           </div>
 
           {/* Dynamic Views (Content Area - 화면에 맞게 스크롤) */}
           <main data-testid="main-scroll" className="flex-1 min-h-0 flex flex-col p-2 sm:p-4 bg-slate-50 border-t-2 border-solid border-slate-400 sm:rounded-b-xl overflow-y-auto custom-scrollbar">
-            {isAdmin&&<div className="mb-2 flex justify-end"><button type="button" className="room-edit" onClick={()=>{setActiveTab('home');setPresentationOpen(value=>!value);}}>{presentationOpen?'방장 관리':'관람 화면'}</button></div>}
-            {viewState === 'admin' && activeTab === 'home' && !presentationOpen && (
+            {isAdmin && activeTab === 'home' && !presentationOpen && (
               <AdminView
                 onSetup={handleAdminSetup} 
                 isRevealed={config?.isRevealed} 
@@ -909,7 +912,7 @@ export default function App() {
               />
             )}
             {isAdmin&&presentationOpen&&<PresentationView profiles={visibleProfiles} treePosts={treePosts}
-              photos={photoPosts} photosReady={photosReady} messages={events.filter(event=>event.type==='message').length}
+              roundId={roundId}
               hasDraw={publicConfig.hasDraw} revealed={publicConfig.isRevealed}
               pairs={publicConfig.isRevealed?revealedPairs:null} onToggleReveal={toggleReveal}
               activeTab={activeTab}/>}
@@ -1099,8 +1102,23 @@ export default function App() {
         @media (min-width: 640px) {
           [data-wide-view="true"] { padding:0; }
           [data-wide-view="true"] .mini-home-shell { max-width:none; height:100%; border-radius:0; }
-          [data-wide-view="true"] .room-fit .room-stage { width:100%; }
-          [data-wide-view="true"] .room-expanded .room-stage { width:max(100%, 1600px); height:auto; aspect-ratio:1000 / 800; }
+          [data-fit-room="true"], [data-fit-room="true"] .presentation-body {
+            flex:1 1 0; min-height:0; display:flex; flex-direction:column;
+          }
+          [data-fit-room="true"] > :first-child { flex-shrink:0; }
+          [data-fit-room="true"] .christmas-room {
+            flex:1 1 0; min-height:0; display:flex; flex-direction:column;
+          }
+          [data-fit-room="true"] .room-toolbar,
+          [data-fit-room="true"] .room-tree-button,
+          [data-fit-room="true"] .room-caption { flex-shrink:0; }
+          [data-fit-room="true"] .room-scroll {
+            flex:1 1 0; min-height:0; container-type:size; display:grid; place-items:center; overflow:hidden;
+          }
+          [data-fit-room="true"] .christmas-room .room-stage {
+            width:min(100%,125cqh); height:auto; aspect-ratio:1000 / 800; margin:0;
+          }
+          [data-fit-room="true"] .room-toolbar .room-edit { display:none; }
         }
         .room-fit .room-stage { width:min(100%,1000px);height:auto;aspect-ratio:1000 / 800; }
         .room-scene {display:block;width:100%;height:100%;background:#f4f0e9;}
@@ -1490,13 +1508,18 @@ function ProfileSetupView({onSetup,initialProfile,onCancel}) {
           {AVATAR_OPTIONS.map(option=><button key={option.id} type="button" aria-label={option.label} aria-pressed={avatar===option.id} onClick={()=>setAvatar(option.id)} className={`avatar-option p-1 border-2 rounded flex justify-center ${avatar===option.id?'border-orange-500 bg-orange-50':'border-transparent bg-slate-100'}`}><PixelCharacter avatar={option.id}/></button>)}
         </div>
       </div>
-      <input type="text" maxLength={30} className="w-full bg-slate-50 border border-slate-300 text-center text-sm p-2 mb-3 outline-none focus:border-blue-500" placeholder="사용할 별명 (예: 루돌프코)" value={nickname} onChange={e=>setNickname(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.nativeEvent.isComposing&&save()}/>
+      <label htmlFor="minime-nickname" className="mb-1 block text-left text-sm font-bold text-slate-800">마니또 활동용 별명</label>
+      <p id="minime-nickname-hint" className="mb-2 rounded border border-orange-300 bg-orange-50 px-3 py-2 text-left text-sm leading-relaxed text-orange-900">
+        <strong>본명을 쓰면 마니또 정체가 드러날 수 있어요!</strong><br/>
+        꼭 마니또 활동에 사용할 별명을 입력해 주세요.
+      </p>
+      <input id="minime-nickname" aria-describedby="minime-nickname-hint" type="text" maxLength={30} className="w-full bg-slate-50 border border-slate-300 text-center text-sm p-2 mb-3 outline-none focus:border-blue-500" placeholder="예: 루돌프코, 눈꽃요정" value={nickname} onChange={e=>setNickname(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.nativeEvent.isComposing&&save()}/>
       <button onClick={save} disabled={busy} className="w-full bg-orange-500 text-white font-bold text-sm py-2 border border-orange-700 hover:bg-orange-600 transition">{busy?'저장 중…':initialProfile?'미니미 저장':'미니룸 입장'}</button>
       {onCancel&&<button onClick={onCancel} className="text-xs text-slate-500 mt-3 px-4 py-1">취소</button>}
     </div>
   </div>;
 }
-function PresentationView({profiles,treePosts,photos,photosReady,messages,hasDraw,revealed,pairs,onToggleReveal,activeTab}) {
+function PresentationView({profiles,treePosts,roundId,hasDraw,revealed,pairs,onToggleReveal,activeTab}) {
   const [showResults,setShowResults]=useState(false);
   useEffect(()=>setShowResults(false),[activeTab]);
   const tab=showResults&&revealed?'results':activeTab;
@@ -1507,7 +1530,7 @@ function PresentationView({profiles,treePosts,photos,photosReady,messages,hasDra
       if(await onToggleReveal())setShowResults(!revealed);
     } finally {setRevealBusy(false);}
   };
-  return <section className="min-w-0 space-y-3" aria-label="방장 관람 화면">
+  return <section data-fit-room={tab==='home'?'true':undefined} className="min-w-0 space-y-3" aria-label="방장 관람 화면">
     <div className="flex flex-wrap justify-end gap-2">
       {revealed&&<button type="button" onClick={()=>setShowResults(value=>!value)} className="rounded border bg-white px-3 py-2 text-sm">
         {showResults?'돌아가기':'배정표 보기'}
@@ -1517,16 +1540,9 @@ function PresentationView({profiles,treePosts,photos,photosReady,messages,hasDra
         {revealed?'공개 중지':'마니또 공개하기'}
       </button>
     </div>
-    <div className="w-full">
+    <div className="presentation-body w-full">
       {tab==='home'&&<ChristmasMiniroom profiles={profiles} treePosts={treePosts} demoMode/>}
-      {tab==='photos'&&<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {!photosReady&&<p role="status">사진첩을 불러오는 중…</p>}
-        {photosReady&&!photos.some(post=>post.image)&&<p>아직 올라온 사진이 없어요.</p>}
-        {photos.filter(post=>post.image).map(post=><figure key={post.id} className="overflow-hidden rounded-lg bg-black/25">
-          <img src={post.image} alt={post.text||'사진첩 사진'} loading="lazy" className="h-64 w-full object-contain"/>
-          {(post.text||post.nickname)&&<figcaption className="break-words px-3 py-2">{post.nickname}{post.text&&<p>{post.text}</p>}</figcaption>}
-        </figure>)}
-      </div>}
+      {tab==='photos'&&<PresentationFeed key="photos" kind="photos" roundId={roundId} profiles={profiles}/>}
       {tab==='results'&&revealed&&<div className="rounded-xl border bg-white p-5">
         <h3 className="mb-4 text-center text-2xl font-bold">마니또 배정표</h3>
         <ul aria-label="왼쪽 사람은 오른쪽 사람의 마니또" className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -1536,12 +1552,64 @@ function PresentationView({profiles,treePosts,photos,photosReady,messages,hasDra
             </li>)}
         </ul>
       </div>}
-      {tab==='guestbook'&&<div className="mx-auto max-w-lg rounded-xl border bg-white p-6 text-center">
-        <p className="text-2xl font-bold">지금까지 일촌평 {messages}개</p>
-        <p className="mt-3">휴대폰에서 마니또 사이트에 로그인한 뒤 <strong>일촌평</strong>을 눌러 내가 챙길 사람에게 한마디를 남겨요.</p>
-      </div>}
+      {tab==='guestbook'&&<PresentationFeed key={roundId} kind="guestbook" roundId={roundId} profiles={profiles}/>}
     </div>
   </section>;
+}
+
+function PresentationFeed({kind,roundId,profiles}) {
+  const [posts,setPosts]=useState([]);
+  const [cursor,setCursor]=useState(null);
+  const [ready,setReady]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const isPhoto=kind==='photos';
+  const pageSize=30;
+  const feed=()=>isPhoto?photosCollection():eventsCollection(roundId);
+  const orderedField=isPhoto?'createdAt':'timestamp';
+  const readPosts=snapshot=>snapshot.docs.map(item=>{
+    const data=item.data({serverTimestamps:'estimate'});
+    return {...data,id:item.id,[orderedField]:data[orderedField]?.toMillis?.()||0};
+  });
+  const latest=useRef([]);
+  const loadedOlder=useRef(false);
+  useEffect(()=>{
+    if(!isPhoto&&!roundId){setReady(true);return;}
+    return onSnapshot(query(feed(),orderBy(orderedField,'desc'),limit(pageSize)),snapshot=>{
+      const fresh=readPosts(snapshot);
+      const previous=latest.current;
+      latest.current=fresh;
+      setPosts(items=>{
+        if(!loadedOlder.current)return fresh;
+        const merged=new Map(items.map(post=>[post.id,post]));
+        for(const post of [...previous,...fresh])merged.set(post.id,post);
+        if(fresh.length<pageSize)for(const change of snapshot.docChanges())if(change.type==='removed')merged.delete(change.doc.id);
+        return [...merged.values()].sort((a,b)=>b[orderedField]-a[orderedField]);
+      });
+      if(!loadedOlder.current)setCursor(snapshot.size===pageSize?snapshot.docs.at(-1):null);
+      setReady(true);
+    },()=>{setError('글을 불러오지 못했어요. 탭을 다시 열어주세요.');setReady(true);});
+  },[kind,roundId]);
+  const loadOlder=async()=>{
+    if(!cursor||busy)return;
+    loadedOlder.current=true;
+    setBusy(true);setError('');
+    try{
+      const snapshot=await getDocsFromServer(query(feed(),orderBy(orderedField,'desc'),startAfter(cursor),limit(pageSize)));
+      setPosts(items=>[...new Map([...items,...readPosts(snapshot)].map(post=>[post.id,post])).values()]);
+      setCursor(snapshot.size===pageSize?snapshot.docs.at(-1):null);
+    }catch{setError('이전 글을 불러오지 못했어요. 다시 눌러주세요.');}
+    finally{setBusy(false);}
+  };
+  return <>
+    {error&&<p role="alert" className="py-2 text-sm text-red-700">{error}</p>}
+    {isPhoto?<PhotoChatView readOnly posts={posts} ready={ready} profiles={profiles}/>:
+      ready?<GuestbookView events={posts.filter(post=>post.type==='message')} profiles={profiles} isRevealed={false}/>:
+        <p role="status">방명록을 불러오는 중…</p>}
+    {cursor&&<button type="button" onClick={loadOlder} disabled={busy} className="w-full rounded border bg-white py-2 text-sm text-blue-700">
+      {busy?'불러오는 중…':'이전 글 더 보기'}
+    </button>}
+  </>;
 }
 
 function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSave,onTreeDelete,demoMode=false}) {
@@ -1784,7 +1852,7 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
         .xmas-draw-wrap {
           margin: auto;
           width: 100%;
-          max-width: 560px;
+          max-width: 680px;
           padding: 4px 0;
         }
 
@@ -1792,8 +1860,8 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
           position: relative;
           overflow: hidden;
           padding: 30px 18px 28px;
-          border-radius: 22px;
-          border: 1.5px solid rgba(229, 193, 125, 0.58);
+          border-radius: 3px;
+          border: 1.5px solid rgba(229, 193, 125, 0.90);
           background:
             radial-gradient(circle at 50% 12%, rgba(236, 198, 126, 0.18), transparent 48%),
             radial-gradient(circle at 50% 95%, #123327 0%, #091d16 60%, #05110d 100%);
@@ -1810,8 +1878,8 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
           content: "";
           position: absolute;
           inset: 9px;
-          border-radius: 15px;
-          border: 1px solid rgba(229, 193, 125, 0.24);
+          border-radius: 0;
+          border: 1px solid rgba(229, 193, 125, 0.75);
           pointer-events: none;
         }
 
@@ -1852,12 +1920,23 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
         }
 
         @keyframes xmas-snowfall {
-          0% { transform: translateY(-10px) translateX(0); opacity: 0; }
+          0% { top:-3%; transform:translateX(0); opacity:0; }
           15% { opacity: 0.75; }
           85% { opacity: 0.65; }
-          100% { transform: translateY(420px) translateX(18px); opacity: 0; }
+          100% { top:103%; transform:translateX(18px); opacity:0; }
         }
 
+        .xmas-snow-dot.flake {
+          background:none; color:#f5f2e4; font-size:15px; line-height:1;
+          text-shadow:0 0 8px #fff9;
+        }
+        .xmas-result-wrap::before {
+          content:""; position:absolute; inset:-42px -22px;
+          background:repeating-conic-gradient(from 8deg,#f5cd7766 0deg 1deg,transparent 1deg 13deg);
+          mask-image:radial-gradient(ellipse,transparent 29%,#000 52%,transparent 74%);
+          pointer-events:none; animation:xmas-rays .8s ease-out both;
+        }
+        @keyframes xmas-rays {from{opacity:0;transform:scale(.65)}to{opacity:1;transform:scale(1)}}
         .xmas-draw-content {
           position: relative;
           z-index: 2;
@@ -2433,7 +2512,7 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
           ].map((flake, i) => (
             <span
               key={i}
-              className="xmas-snow-dot"
+              className={`xmas-snow-dot ${i%2===0?'flake':''}`}
               style={{
                 left: flake.left,
                 width: `${flake.size}px`,
@@ -2448,7 +2527,7 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
         <div className="xmas-draw-content">
           <div className="xmas-badge">✦ CHRISTMAS SECRET MANITTO ✦</div>
           <h2 id="draw-title" className="xmas-title">
-            내가 한달동안 마니또가 되어줄 사람은?
+            내가 한 달 동안<br/>마니또가 되어줄 사람은?
           </h2>
           <p className="xmas-subtitle" aria-live="polite">
             {stage === 'idle'
@@ -2539,11 +2618,11 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
                   <p className="xmas-target-nick">({targetNickname})</p>
                 )}
                 <div className="xmas-card-divider" />
-                <p className="xmas-ment">한달동안 마니또 활동 잘 부탁드립니다.</p>
-                <button type="button" onClick={onNext} className="xmas-next-btn">
-                  미니룸으로 가기 <ArrowRight size={16} />
-                </button>
+                <p className="xmas-ment">한 달 동안 마니또 활동<br/>잘 부탁드립니다.</p>
               </div>
+              <button type="button" onClick={onNext} className="xmas-next-btn relative">
+                미니룸으로 가기 <ArrowRight size={16} />
+              </button>
             </div>
           )}
         </div>
@@ -2685,7 +2764,7 @@ function DiaryFeed({events,profiles,pairs,isRevealed,title="다이어리 (최근
       </div>
   );
 }
-function PhotoChatView({posts,ready,onPost,onDelete,onError,myMemberId,isAdmin,profiles,limitCount,onMore}) {
+function PhotoChatView({readOnly=false,posts,ready,onPost,onDelete,onError,myMemberId,isAdmin,profiles,limitCount,onMore}) {
   const [text,setText]=useState(''),[image,setImage]=useState(''),[processing,setProcessing]=useState(false),[busy,setBusy]=useState(false),[zoom,setZoom]=useState(null);
   const fileVersion=useRef(0);
   useEffect(()=>()=>{fileVersion.current++;},[]);
@@ -2697,20 +2776,20 @@ function PhotoChatView({posts,ready,onPost,onDelete,onError,myMemberId,isAdmin,p
   const send=async()=>{if(busy||processing)return;setBusy(true);try{if(await onPost(text,image)){setText('');setImage('');}}finally{setBusy(false);}};
   return <div className="flex flex-col min-h-full gap-3 pb-4">
     <div className="flex items-end justify-between border-b border-dashed border-slate-300 pb-2"><div><h2 className="text-sm font-bold text-blue-700">📷 울장복 사진첩</h2><p className="text-[10px] text-slate-500 mt-1">미니미 별명으로 사진과 짧은 한마디를 함께 나눠요.</p></div></div>
-    <div className="border border-slate-300 bg-white p-3 rounded-sm">
+    {!readOnly&&<div className="border border-slate-300 bg-white p-3 rounded-sm">
       {image&&<div className="mb-2 bg-slate-50 p-2 border border-slate-200"><img src={image} alt="올릴 사진 미리보기" className="max-h-40 w-full object-contain"/><button onClick={()=>{fileVersion.current++;setImage('');}} className="text-[10px] text-red-500 mt-1">첨부 취소</button></div>}
       <textarea aria-label="사진첩 한마디" maxLength={500} value={text} onChange={e=>setText(e.target.value)} placeholder="사진과 함께 짧은 한마디를 남겨보세요!" className="w-full min-h-[66px] border border-slate-300 bg-slate-50 p-2 text-xs outline-none focus:border-blue-400 rounded-sm"/>
       <div className="flex justify-between items-center gap-2 mt-2"><label className="text-xs border border-slate-300 px-2 py-1.5 text-slate-600 bg-slate-50 cursor-pointer rounded-sm">{processing?'사진 준비 중…':'📷 사진 첨부'}<input type="file" accept="image/*" aria-label="사진 선택" onChange={selectPhoto} disabled={processing||busy} className="hidden"/></label><span className="text-[10px] text-slate-400 ml-auto">{text.length}/500</span><button disabled={busy||processing||(!image&&!text.trim())} onClick={send} className="text-xs font-bold px-4 py-1.5 bg-blue-500 border border-blue-700 text-white disabled:opacity-40 rounded-sm">{busy?'올리는 중…':'올리기'}</button></div>
-    </div>
+    </div>}
     {!ready?<div className="text-xs text-center text-slate-400 py-8">사진첩을 불러오는 중이에요…</div>:posts.length===0?<div className="text-xs text-center text-slate-400 py-10 border border-dashed border-slate-300 bg-white">첫 사진과 한마디를 남겨주세요!</div>:<div className="space-y-3" aria-label="사진첩 대화 목록">{posts.map(post=>{
-      const own=post.memberId===myMemberId,profile=Object.values(profiles||{}).find(p=>p._memberId===post.memberId);
+      const own=!readOnly&&post.memberId===myMemberId,profile=Object.values(profiles||{}).find(p=>p._memberId===post.memberId);
       return <article key={post.id} className={`flex gap-2 ${own?'flex-row-reverse':''}`} data-photo-id={post.id}>
         <PixelCharacter avatar={profile?.avatar||'mini-01'} className="photo-chat-avatar"/>
         <div className={`max-w-[88%] sm:max-w-[75%] min-w-0 border p-2.5 rounded ${own?'bg-blue-50 border-blue-200':'bg-white border-slate-300'}`}>
           <div className="flex items-center gap-3 justify-between mb-1.5"><strong className="text-[11px] text-slate-700">{post.nickname}</strong><span className="text-[9px] text-slate-400 whitespace-nowrap">{post.createdAt?new Date(post.createdAt).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'}):'전송 중'}</span></div>
           {post.image&&<button type="button" onClick={()=>setZoom(post)} aria-label="사진 크게 보기" className="block mb-2 max-w-full"><img src={post.image} alt={post.text||`${post.nickname}님의 사진`} loading="lazy" className="max-h-72 max-w-full w-auto object-contain rounded-sm"/></button>}
           {post.text&&<p className="text-xs text-slate-700 whitespace-pre-wrap break-words leading-relaxed">{post.text}</p>}
-          {(own||isAdmin)&&<button type="button" onClick={()=>onDelete(post)} aria-label={`${post.nickname} 사진첩 글 삭제`} className="text-[10px] text-slate-400 hover:text-red-500 mt-2">삭제</button>}
+          {!readOnly&&(own||isAdmin)&&<button type="button" onClick={()=>onDelete(post)} aria-label={`${post.nickname} 사진첩 글 삭제`} className="text-[10px] text-slate-400 hover:text-red-500 mt-2">삭제</button>}
         </div>
       </article>;
     })}</div>}
