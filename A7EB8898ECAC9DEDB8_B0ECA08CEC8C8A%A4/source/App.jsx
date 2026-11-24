@@ -1830,26 +1830,7 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
   const targetNickname = profiles?.[target]?.nickname;
   const deptLabel = targetDepartment && targetDepartment !== '미분류' ? targetDepartment : '';
 
-  const boxes = [
-    {
-      id: 0,
-      label: 'No. 1',
-      body: 'linear-gradient(155deg, #7c1828 0%, #4d0a15 100%)',
-      lid: 'linear-gradient(155deg, #941f32 0%, #610e1c 100%)',
-    },
-    {
-      id: 1,
-      label: 'No. 2',
-      body: 'linear-gradient(155deg, #174937 0%, #0b281d 100%)',
-      lid: 'linear-gradient(155deg, #1f5f48 0%, #103527 100%)',
-    },
-    {
-      id: 2,
-      label: 'No. 3',
-      body: 'linear-gradient(155deg, #1d3154 0%, #0e1a30 100%)',
-      lid: 'linear-gradient(155deg, #27406e 0%, #142340 100%)',
-    },
-  ];
+  const boxes = [1, 2, 3];
 
   const sparkles = [
     { tx: '-115px', ty: '-78px', s: 1.1, d: '0s', c: '#fff5cf' },
@@ -1882,6 +1863,18 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
         .xmas-selection { position:relative; width:min(100%,460px); margin:auto; }
         .xmas-selection img { display:block; width:100%; height:auto; }
         .xmas-selection button { position:absolute; top:45.5%; width:23%; height:25%; border:0; border-radius:8px; background:transparent; cursor:pointer; }
+        .xmas-selection .photo-gift-opening {position:absolute;inset:0;pointer-events:none;animation:photo-gift-shake .55s ease both;}
+        .xmas-selection .photo-gift-piece {position:absolute;inset:0;background:var(--selection-art) center / 100% 100% no-repeat;}
+        .xmas-selection .photo-gift-lid {animation:photo-gift-open .68s 1.02s ease-out both;}
+        .xmas-selection .photo-gift-bow {animation:photo-gift-untie .55s .47s ease-out both;}
+        .xmas-selection .photo-gift-light {
+          position:absolute;left:var(--box-center);top:54%;width:44%;height:36%;translate:-50% -50%;
+          opacity:0;background:radial-gradient(ellipse,#fff4b7,#ffc66866 25%,transparent 66%);
+          animation:xmas-pop-glow .8s 1.05s ease-out both;
+        }
+        @keyframes photo-gift-shake {25%,65%{transform:translateX(-4px)}45%,85%{transform:translateX(4px)}}
+        @keyframes photo-gift-open {to{transform:translateY(-10%) rotate(-8deg);opacity:0}}
+        @keyframes photo-gift-untie {to{transform:translate(-3%,-8%) scaleX(1.15);opacity:0}}
         .xmas-selection button:hover { background:#ffe2a614; }
         .xmas-selection button:focus-visible { outline:3px solid #ffdc8a; outline-offset:2px; }
         .xmas-draw-wrap {
@@ -2016,371 +2009,6 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
         }
 
         /* 3개 선물상자 영역 */
-        .xmas-boxes {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 12px;
-          max-width: 400px;
-          margin: 34px auto 12px;
-          align-items: end;
-        }
-
-        .xmas-box-btn {
-          position: relative;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: flex-end;
-          padding: 16px 4px 4px;
-          border: 0;
-          background: none;
-          color: #edd092;
-          outline: none;
-          transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease;
-        }
-
-        .xmas-box-btn:enabled {
-          cursor: pointer;
-        }
-
-        .xmas-box-btn:focus-visible {
-          outline: 2px solid #f5dca4;
-          outline-offset: 4px;
-          border-radius: 14px;
-        }
-
-        .xmas-box-btn:enabled:hover .xmas-gift,
-        .xmas-box-btn:enabled:focus-visible .xmas-gift {
-          transform: translateY(-9px) scale(1.05);
-          filter: drop-shadow(0 14px 20px rgba(229, 193, 125, 0.25));
-        }
-
-        .xmas-box-btn.is-dim {
-          opacity: 0.22;
-          transform: scale(0.86);
-          pointer-events: none;
-        }
-
-        .xmas-gift {
-          display: block;
-          position: relative;
-          width: 84px;
-          height: 82px;
-          transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), filter 0.3s ease;
-        }
-
-        @media (max-width: 400px) {
-          .xmas-gift { width: 74px; height: 74px; }
-        }
-
-        .xmas-gift-shadow {
-          position: absolute;
-          left: 50%;
-          bottom: -6px;
-          width: 78%;
-          height: 12px;
-          transform: translateX(-50%);
-          border-radius: 50%;
-          background: radial-gradient(ellipse, rgba(0, 0, 0, 0.65), transparent 72%);
-        }
-
-        .xmas-gift-lid {
-          display: block;
-          position: relative;
-          z-index: 4;
-          width: calc(100% + 8px);
-          height: 22px;
-          margin-left: -4px;
-          border-radius: 6px;
-          border: 1px solid rgba(242, 211, 136, 0.45);
-          box-shadow:
-            inset 0 2px 3px rgba(255, 255, 255, 0.18),
-            0 6px 14px rgba(0, 0, 0, 0.42);
-          transform-origin: 18% 100%;
-        }
-
-        .xmas-gift-lid::after {
-          content: "";
-          position: absolute;
-          left: 50%;
-          top: 0;
-          transform: translateX(-50%);
-          width: 14px;
-          height: 100%;
-          background: linear-gradient(90deg, #b98937 0%, #f7e1ab 50%, #b98937 100%);
-        }
-
-        .xmas-gift-bow {
-          position: absolute;
-          top: -14px;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 44px;
-          height: 22px;
-          z-index: 5;
-          transform-origin: 50% 75%;
-        }
-
-        .xmas-bow-loop {
-          position: absolute;
-          top: 1px;
-          width: 19px;
-          height: 14px;
-          border: 2.8px solid #f2d388;
-          border-radius: 65% 65% 12% 65%;
-          background: linear-gradient(135deg, rgba(247, 225, 171, 0.42), rgba(185, 137, 55, 0.18));
-          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-          transform-origin: 85% 85%;
-        }
-
-        .xmas-bow-loop.left {
-          left: 2px;
-          transform: rotate(-16deg);
-        }
-
-        .xmas-bow-loop.right {
-          right: 2px;
-          transform: scaleX(-1) rotate(-16deg);
-        }
-
-        .xmas-bow-tail {
-          position: absolute;
-          top: 9px;
-          width: 4px;
-          height: 15px;
-          border-radius: 2px;
-          background: linear-gradient(180deg, #f7e1ab 0%, #c7953e 100%);
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
-          transform-origin: 50% 0%;
-        }
-
-        .xmas-bow-tail.left {
-          left: 14px;
-          transform: rotate(22deg);
-        }
-
-        .xmas-bow-tail.right {
-          right: 14px;
-          transform: rotate(-22deg);
-        }
-
-        .xmas-gift-knot {
-          position: absolute;
-          left: 50%;
-          top: 7px;
-          transform: translateX(-50%);
-          width: 9px;
-          height: 9px;
-          border-radius: 50%;
-          background: radial-gradient(circle at 35% 35%, #fff6d6, #c7953e);
-          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-          z-index: 2;
-        }
-
-        .xmas-gift-body {
-          display: block;
-          position: relative;
-          z-index: 2;
-          width: 100%;
-          height: 60px;
-          margin-top: -2px;
-          border-radius: 0 0 8px 8px;
-          border: 1px solid rgba(242, 211, 136, 0.32);
-          border-top: none;
-          box-shadow:
-            inset 0 -8px 16px rgba(0, 0, 0, 0.35),
-            0 12px 22px rgba(0, 0, 0, 0.45);
-          overflow: hidden;
-        }
-
-        /* 세로 금박 리본 & 풀리면서 흘러내리는 꼬리 */
-        .xmas-ribbon-v {
-          position: absolute;
-          left: 50%;
-          top: 0;
-          transform: translateX(-50%);
-          width: 14px;
-          height: 100%;
-          background: linear-gradient(90deg, #b98937 0%, #f7e1ab 50%, #b98937 100%);
-          transform-origin: 50% 0%;
-        }
-
-        .xmas-ribbon-tail {
-          position: absolute;
-          top: 50%;
-          width: 11px;
-          height: 34px;
-          background: linear-gradient(180deg, #f7e1ab 0%, #d4a448 65%, #9c6e23 100%);
-          border-radius: 0 0 5px 5px;
-          box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
-          opacity: 0;
-          z-index: 3;
-          pointer-events: none;
-          transform-origin: 50% 0%;
-        }
-
-        .xmas-ribbon-tail.left {
-          left: calc(50% - 7px);
-          transform: rotate(8deg) scaleY(0.1);
-        }
-
-        .xmas-ribbon-tail.right {
-          left: calc(50% - 4px);
-          transform: rotate(-8deg) scaleY(0.1);
-        }
-
-        /* 가로 금박 리본 */
-        .xmas-gift-body::after {
-          content: "";
-          position: absolute;
-          left: 0;
-          top: 50%;
-          transform: translateY(-50%);
-          width: 100%;
-          height: 10px;
-          background: linear-gradient(180deg, #b98937 0%, #f7e1ab 50%, #b98937 100%);
-          opacity: 0.92;
-          transform-origin: 50% 50%;
-        }
-
-        .xmas-box-label {
-          margin-top: 12px;
-          font-size: 11.5px;
-          font-weight: 700;
-          letter-spacing: 0.08em;
-          color: rgba(237, 208, 146, 0.88);
-        }
-
-        /* 상자 열림 (리본 풀림 -> 뚜껑 팡!) 모션 - 1950ms 타임라인 */
-        .xmas-box-glow {
-          position: absolute;
-          inset: -38px -28px 6px;
-          border-radius: 50%;
-          pointer-events: none;
-          opacity: 0;
-          z-index: 3;
-          background: radial-gradient(circle, #fffbe2 0%, rgba(247, 216, 138, 0.68) 32%, transparent 70%);
-        }
-
-        .xmas-box-btn.is-opening {
-          z-index: 6;
-        }
-
-        /* 0s~0.55s: 두근거림 흔들림 */
-        .xmas-box-btn.is-opening .xmas-gift {
-          animation: xmas-shake 0.56s ease-in-out both;
-        }
-
-        /* 0.52s~1.05s: 리본 매듭이 슥 풀리며 좌우 날개·꼬리가 펼쳐짐 */
-        .xmas-box-btn.is-opening .xmas-bow-loop.left {
-          animation: xmas-unloop-left 0.52s 0.52s cubic-bezier(0.22, 1.25, 0.36, 1) forwards;
-        }
-
-        .xmas-box-btn.is-opening .xmas-bow-loop.right {
-          animation: xmas-unloop-right 0.52s 0.52s cubic-bezier(0.22, 1.25, 0.36, 1) forwards;
-        }
-
-        .xmas-box-btn.is-opening .xmas-bow-tail.left {
-          animation: xmas-untail-left 0.55s 0.56s ease-out forwards;
-        }
-
-        .xmas-box-btn.is-opening .xmas-bow-tail.right {
-          animation: xmas-untail-right 0.55s 0.56s ease-out forwards;
-        }
-
-        .xmas-box-btn.is-opening .xmas-gift-knot {
-          animation: xmas-knot-pop 0.35s 0.72s ease-out forwards;
-        }
-
-        /* 리본이 풀리며 상자 위·옆으로 촤르륵 흘러내림 */
-        .xmas-box-btn.is-opening .xmas-ribbon-v {
-          animation: xmas-ribbon-loosen 0.45s 0.65s ease-in forwards;
-        }
-
-        .xmas-box-btn.is-opening .xmas-ribbon-tail.left {
-          animation: xmas-droop-left 0.68s 0.72s cubic-bezier(0.25, 0.9, 0.35, 1.1) forwards;
-        }
-
-        .xmas-box-btn.is-opening .xmas-ribbon-tail.right {
-          animation: xmas-droop-right 0.68s 0.72s cubic-bezier(0.25, 0.9, 0.35, 1.1) forwards;
-        }
-
-        /* 1.12s~: 풀린 리본 사이로 뚜껑이 팡! 튀어 오름 */
-        .xmas-box-btn.is-opening .xmas-gift-lid {
-          animation: xmas-pop-lid 0.68s 1.12s cubic-bezier(0.18, 0.88, 0.3, 1.15) forwards;
-        }
-
-        .xmas-box-btn.is-opening .xmas-gift-bow {
-          animation: xmas-bow-flyaway 0.62s 0.98s cubic-bezier(0.2, 0.85, 0.3, 1) forwards;
-        }
-
-        .xmas-box-btn.is-opening .xmas-box-glow {
-          animation: xmas-pop-glow 0.85s 1.14s ease-out forwards;
-        }
-
-        @keyframes xmas-shake {
-          0%, 100% { transform: scale(1.06) rotate(0deg); }
-          20% { transform: scale(1.1) translateY(-3px) rotate(-5deg); }
-          40% { transform: scale(1.1) translateY(-2px) rotate(5deg); }
-          60% { transform: scale(1.12) translateY(-4px) rotate(-4deg); }
-          80% { transform: scale(1.12) translateY(-3px) rotate(4deg); }
-        }
-
-        @keyframes xmas-unloop-left {
-          0% { transform: rotate(-16deg) scale(1); }
-          55% { transform: rotate(-56deg) translate(-6px, -4px) scale(1.18, 0.82); }
-          100% { transform: rotate(-82deg) translate(-12px, 6px) scale(1.3, 0.55); opacity: 0.75; }
-        }
-
-        @keyframes xmas-unloop-right {
-          0% { transform: scaleX(-1) rotate(-16deg) scale(1); }
-          55% { transform: scaleX(-1) rotate(-56deg) translate(-6px, -4px) scale(1.18, 0.82); }
-          100% { transform: scaleX(-1) rotate(-82deg) translate(-12px, 6px) scale(1.3, 0.55); opacity: 0.75; }
-        }
-
-        @keyframes xmas-untail-left {
-          0% { transform: rotate(22deg) scaleY(1); }
-          100% { transform: rotate(48deg) translate(-5px, 6px) scaleY(1.35); opacity: 0.5; }
-        }
-
-        @keyframes xmas-untail-right {
-          0% { transform: rotate(-22deg) scaleY(1); }
-          100% { transform: rotate(-48deg) translate(5px, 6px) scaleY(1.35); opacity: 0.5; }
-        }
-
-        @keyframes xmas-knot-pop {
-          0% { transform: translateX(-50%) scale(1); opacity: 1; }
-          100% { transform: translateX(-50%) scale(1.8); opacity: 0; }
-        }
-
-        @keyframes xmas-ribbon-loosen {
-          0% { transform: translateX(-50%) scaleY(1); opacity: 1; }
-          100% { transform: translateX(-50%) scaleY(0.15); opacity: 0; }
-        }
-
-        @keyframes xmas-droop-left {
-          0% { opacity: 0; transform: translate(0, 0) rotate(6deg) scaleY(0.2); }
-          30% { opacity: 1; transform: translate(-4px, 6px) rotate(16deg) scaleY(0.85); }
-          100% { opacity: 0; transform: translate(-18px, 34px) rotate(32deg) scaleY(1.25); }
-        }
-
-        @keyframes xmas-droop-right {
-          0% { opacity: 0; transform: translate(0, 0) rotate(-6deg) scaleY(0.2); }
-          30% { opacity: 1; transform: translate(4px, 6px) rotate(-16deg) scaleY(0.85); }
-          100% { opacity: 0; transform: translate(18px, 34px) rotate(-32deg) scaleY(1.25); }
-        }
-
-        @keyframes xmas-bow-flyaway {
-          0% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
-          100% { opacity: 0; transform: translateX(-50%) translateY(-46px) rotate(22deg) scale(1.25); }
-        }
-
-        @keyframes xmas-pop-lid {
-          0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
-          35% { transform: translate(-8px, -34px) rotate(-18deg) scale(1.04); opacity: 1; }
-          100% { transform: translate(-22px, -78px) rotate(-34deg) scale(0.92); opacity: 0; }
-        }
-
         @keyframes xmas-pop-glow {
           0% { opacity: 0; transform: scale(0.45); }
           35% { opacity: 1; transform: scale(1.35); }
@@ -2537,10 +2165,27 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
         }
       `}</style>
 
-      {stage==='idle'?<section className="xmas-selection" aria-label="내가 한 달 동안 마니또가 되어줄 사람은?">
+      {stage!=='revealed'?<section className="xmas-selection" aria-label="내가 한 달 동안 마니또가 되어줄 사람은?">
         <img src={DRAW_SELECTION_ART} alt="마음에 드는 선물상자 하나를 선택해 주세요"/>
-        {boxes.map((box,index)=><button key={box.id} type="button" style={{left:`${13.5+index*25}%`}}
+        {stage==='idle'&&boxes.map((box,index)=><button key={box} type="button" style={{left:`${13.5+index*25}%`}}
           onClick={()=>choose(index)} aria-label={`${index+1}번 선물상자 열기`}/>)}
+        {stage==='drawing'&&chosen!==null&&(()=>{
+          const shift=chosen*24.8;
+          const clip=points=>`polygon(${points.map(([x,y])=>`${x+shift}% ${y}%`).join(',')})`;
+          return <>
+            <span className="sr-only" role="status">선물상자를 여는 중…</span>
+            <span aria-hidden="true" className="absolute bg-[#214b3b]" style={{left:`${13.9+shift}%`,top:'47%',width:'22.4%',height:'17.8%',borderRadius:'36% 36% 17% 17%',filter:'blur(3px)'}}/>
+            <span aria-hidden="true" className="photo-gift-opening" style={{'--selection-art':`url(${DRAW_SELECTION_ART})`,'--box-center':`${25.2+shift}%`}}>
+              <span className="photo-gift-piece" style={{clipPath:clip([[14.7,53.7],[25.2,55.7],[35.5,53.7],[35.5,62.3],[25.2,64.6],[14.7,62.3]])}}/>
+              <span className="photo-gift-light"/>
+              <span className="photo-gift-piece photo-gift-lid" style={{clipPath:clip([[14.7,50.8],[25.2,48.7],[35.7,50.9],[35.7,54.4],[25.2,57],[14.7,54.4]])}}/>
+              <span className="photo-gift-piece photo-gift-bow" style={{clipPath:clip([[19.2,50.9],[19.4,48.1],[22,47.4],[25.2,48.8],[28.7,47.4],[31,48.2],[31.1,50.9],[25.2,52.2]])}}/>
+              <span className="xmas-sparkle-layer" style={{left:`${25.2+shift}%`,top:'54%'}}>
+                {sparkles.map((sp,index)=><span key={index} className="xmas-sparkle" style={{'--tx':sp.tx,'--ty':sp.ty,'--sc':sp.c,opacity:0,animationDelay:'1.07s'}}/>)}
+              </span>
+            </span>
+          </>;
+        })()}
       </section>:<section className="xmas-draw-board" aria-labelledby="draw-title">
         <div className="xmas-bokeh" aria-hidden="true" />
         <div className="xmas-snow-layer" aria-hidden="true">
@@ -2579,64 +2224,6 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
               : '선물상자가 열렸어요!'}
           </p>
 
-          {stage !== 'revealed' ? (
-            <div className="xmas-boxes">
-              {boxes.map((box, index) => {
-                const selected = chosen === index;
-                const isOpening = selected && stage === 'drawing';
-                return (
-                  <button
-                    type="button"
-                    key={box.id}
-                    disabled={stage !== 'idle'}
-                    onClick={() => choose(index)}
-                    aria-label={`${index + 1}번 선물상자`}
-                    className={[
-                      'xmas-box-btn',
-                      chosen !== null && !selected ? 'is-dim' : '',
-                      isOpening ? 'is-opening' : '',
-                    ].join(' ')}
-                  >
-                    <span className="xmas-gift" aria-hidden="true">
-                      <span className="xmas-gift-shadow" />
-                      <span className="xmas-box-glow" />
-                      <span className="xmas-gift-lid" style={{ background: box.lid }}>
-                        <span className="xmas-gift-bow">
-                          <span className="xmas-bow-loop left" />
-                          <span className="xmas-bow-loop right" />
-                          <span className="xmas-bow-tail left" />
-                          <span className="xmas-bow-tail right" />
-                          <span className="xmas-gift-knot" />
-                        </span>
-                      </span>
-                      <span className="xmas-gift-body" style={{ background: box.body }}>
-                        <span className="xmas-ribbon-v" />
-                      </span>
-                      <span className="xmas-ribbon-tail left" />
-                      <span className="xmas-ribbon-tail right" />
-                      {isOpening && (
-                        <span className="xmas-sparkle-layer">
-                          {sparkles.map((sp, sIdx) => (
-                            <span
-                              key={sIdx}
-                              className="xmas-sparkle"
-                              style={{
-                                '--tx': sp.tx,
-                                '--ty': sp.ty,
-                                '--sc': sp.c,
-                                transform: `scale(${sp.s})`,
-                              }}
-                            />
-                          ))}
-                        </span>
-                      )}
-                    </span>
-                    <span className="xmas-box-label">{box.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
             <div className="xmas-result-wrap">
               <div className="xmas-sparkle-layer" aria-hidden="true">
                 {sparkles.map((sp, sIdx) => (
@@ -2666,7 +2253,6 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
                 미니룸으로 가기 <ArrowRight size={16} />
               </button>
             </div>
-          )}
         </div>
       </section>}
     </div>
