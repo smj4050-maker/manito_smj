@@ -25,10 +25,10 @@ export function poseFrame(action,elapsed,tempo=1){
  return 3;
 }
 export function roomSeed(id){return [...id].reduce((v,c)=>(v*31+c.charCodeAt(0))>>>0,7);}
-export function makeHouseRoute(id,index,count){
+export function makeHouseRoute(id,index,count,wide=false){
  const value=roomSeed(id),rng={seed:value};
  const between=(min,max)=>min+random(rng)*(max-min);
- const stairs=[[258,185],[242,217],[218,258],[183,308],[148,358],[111,417],[91,480]];
+ const stairs=wide?[[245,177],[221,211],[182,252],[146,306],[112,354],[86,405],[78,463]]:[[258,185],[242,217],[218,258],[183,308],[148,358],[111,417],[91,480]];
  const stairLane=offset=>stairs.map(([x,y])=>[x+offset,y]);
  const descent=stairLane(between(-13,-3)),ascent=stairLane(between(4,14)).reverse();
  const upper=[between(370,540),between(173,194)];
@@ -39,6 +39,11 @@ export function makeHouseRoute(id,index,count){
      [between(657,775),between(412,441)],[between(371,470),between(410,442)],[between(244,330),between(463,505)]]
   : [[between(194,248),between(483,515)],[between(290,410),between(413,452)],
      [between(610,758),between(414,449)],[right,front],[between(350,510),between(506,585)]];
+ if(wide){
+  downstairs.unshift([between(85,140),between(485,507)], [between(-285,-205),between(455,520)], [between(-170,-65),between(524,565)]);
+  downstairs.push([between(945,1010),between(495,540)], [between(1200,1285),between(445,540)],
+   [between(1050,1150),between(531,570)], [between(650,760),between(525,573)], [between(190,300),between(507,548)]);
+ }
  const points=[upper,...upstairs,...descent,...downstairs,[between(109,130),between(493,512)],...ascent,[between(295,345),between(176,191)],upper];
  const stairStart=1+upstairs.length,stairEnd=stairStart+descent.length-1;
  const ascentStart=points.length-ascent.length-2,ascentEnd=ascentStart+ascent.length-1;
@@ -59,10 +64,10 @@ export function sampleHouseRoute(route,phase){
 export const overlaps=(a,b,gap=CROWD_GAP)=>Math.abs(a.x-b.x)<gap.x&&Math.abs(a.y-b.y)<gap.y;
 const onStairs=a=>a.route.stairs.some(([start,end])=>a.phase>=start&&a.phase<=end);
 const random=a=>{a.seed=(Math.imul(a.seed,1664525)+1013904223)>>>0;return a.seed/4294967296;};
-export function createCrowd(ids){
+export function createCrowd(ids,wide=false){
  const agents=[],appearance=getCrowdAppearance(ids.length),gap=appearance.gap;
  ids.forEach((id,index)=>{
-  const route=makeHouseRoute(id,index,ids.length);
+  const route=makeHouseRoute(id,index,ids.length,wide);
   const a={id,route,phase:route.phase,seed:roomSeed(id),action:'walk',actionStarted:0};
   a.tempo=.88+random(a)*.30;
   a.actionStarted=-random(a)*WALK_CYCLE_SECONDS;
