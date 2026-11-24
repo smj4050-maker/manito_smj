@@ -7,59 +7,49 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: manito-pages
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '24'
-
-      - name: Find source directory
-        id: locate
+      - name: Install and build
         shell: bash
         run: |
-          SOURCE=$(find . -maxdepth 4 -type f -path '*/source/package.json' -print -quit)
-          if [ -z "$SOURCE" ]; then
-            echo "Source package.json not found"
+          mapfile -d '' projects < <(find . -type f -path '*/source/build.cjs' -print0)
+          if [[ ${#projects[@]} -ne 1 ]]; then
+            echo "::error::Expected exactly one source/build.cjs"
             exit 1
           fi
-          DIR=$(dirname "$SOURCE")
-          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
-          echo "Using $DIR"
-
-      - name: Install and build
-        working-directory: ${{ steps.locate.outputs.dir }}
-        run: |
-          npm ci
-          npm run build
-
-      - name: Prepare site
-        shell: bash
-        run: |
-          mkdir -p public
-          cp "${{ steps.locate.outputs.dir }}/../index.html" public/index.html
-          test -s public/index.html
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload website
-        uses: actions/upload-pages-artifact@v3
+          source_dir="$(dirname "${projects[0]}")"
+          npm --prefix "$source_dir" ci
+          npm --prefix "$source_dir" run build
+          mkdir -p "$RUNNER_TEMP/manito-pages"
+          cp "$source_dir/../index.html" "$RUNNER_TEMP/manito-pages/index.html"
+          test -s "$RUNNER_TEMP/manito-pages/index.html"
+      - uses: actions/upload-pages-artifact@v4
         with:
-          path: public
+          name: github-pages
+          path: ${{ runner.temp }}/manito-pages
 
-      - name: Deploy website
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
         id: deployment
-        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages
