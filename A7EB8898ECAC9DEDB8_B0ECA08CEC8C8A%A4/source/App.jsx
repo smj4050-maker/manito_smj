@@ -741,7 +741,7 @@ export default function App() {
     drawTimer.current=setTimeout(()=>{
       drawTimer.current=null;if(identityRef.current!==started)return;
       setDrawStage('revealed');markDrawSeen();
-    },2200);
+    },window.matchMedia('(prefers-reduced-motion: reduce)').matches?0:1950);
   };
   const goDashboard = async()=>{if(drawStage==='revealed' && await markDrawSeen())setViewState('dashboard');};
 
@@ -899,7 +899,7 @@ export default function App() {
             )}
             {viewState === 'login' && <LoginView onLogin={handleLogin} onGoAdmin={() => setShowAdminAuth(true)} />}
             {viewState === 'profileSetup' && <ProfileSetupView onSetup={handleProfileSetup} />}
-            {viewState === 'draw' && <DrawView target={getMyTarget()} stage={drawStage} onStart={startDraw} onNext={goDashboard} profiles={visibleProfiles} />}
+            {viewState === 'draw' && <DrawView key={identity} target={getMyTarget()} stage={drawStage} onStart={startDraw} onNext={goDashboard} profiles={visibleProfiles} />}
             {viewState === 'dashboard' && activeTab === 'home' && (
               <DashboardView 
                 myName={myName}
@@ -1657,55 +1657,79 @@ function LoginView({ onLogin, onGoAdmin }) {
 }
 
 function DrawView({ target, stage, onStart, onNext, profiles }) {
-  const targetNickname = profiles?.[target]?.nickname || target;
-  
-  return (
-    <div className="h-full flex flex-col items-center justify-center p-2">
-      <div className="border-2 border-dashed border-orange-300 bg-white p-6 w-full text-center min-h-[300px] flex flex-col justify-center items-center">
-        {stage === 'idle' && (
-          <div className="animate-in fade-in duration-500 flex flex-col items-center">
-            <Gift className="text-orange-500 mb-4 w-16 h-16 animate-bounce" />
-            <h2 className="text-lg font-bold mb-2">내 마니또는 누구?</h2>
-            <p className="text-slate-500 text-xs mb-6">처음 한 번, 나에게 배정된 마니또를 확인해보세요!</p>
-            <button 
-              onClick={onStart}
-              className="bg-orange-500 text-white px-6 py-2 font-bold text-sm border border-orange-700 hover:bg-orange-600 transition"
-            >
-              마니또 뽑기
-            </button>
-          </div>
-        )}
+  const [chosen,setChosen]=useState(null);
+  const targetNickname=profiles?.[target]?.nickname;
+  const choose=index=>{
+    if(stage!=='idle'||chosen!==null)return;
+    setChosen(index);
+    onStart();
+  };
 
-        {stage === 'drawing' && (
-          <div className="flex flex-col items-center">
-            <div className="animate-wiggle text-4xl mb-4">🥁</div>
-            <h2 className="text-xl font-bold text-slate-800 animate-pulse">두둥...</h2>
-            <p className="text-slate-500 mt-2 text-xs">로딩중...</p>
-          </div>
-        )}
-
-        {stage === 'revealed' && (
-          <div className="animate-in zoom-in fade-in duration-500 flex flex-col items-center">
-            <span className="text-xs font-bold text-orange-600 bg-orange-100 px-3 py-1 mb-3 border border-orange-200">
-              당신의 일촌(마니또)
+  return <div className="draw-screen">
+    <style>{`
+      .draw-screen { min-height: min(540px,100%); margin:auto; width:100%; max-width:600px; color:#fff3da; text-align:center; }
+      .draw-board { padding:24px 12px; border:2px solid #c49155; border-radius:20px; background:radial-gradient(ellipse at 50% 65%,#355c53,#142d39 72%); box-shadow:inset 0 0 24px #081d22,0 8px 20px #142d3930; }
+      .draw-boxes { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); margin:28px auto 10px; max-width:410px; gap:8px; }
+      .draw-box { position:relative; width:100%; height:134px; padding:0; color:#fff3da; border:0; background:none; }
+      .draw-box:enabled { cursor:pointer; }
+      .draw-box:focus-visible { outline:2px solid #ffdb8a; outline-offset:3px; border-radius:10px; }
+      .draw-gift { position:absolute; inset:14px 8% 26px; transform-origin:50% 95%; transition:transform .2s ease,opacity .35s ease; }
+      .draw-box:enabled:hover .draw-gift,.draw-box:enabled:focus-visible .draw-gift { transform:translateY(-8px) rotate(-4deg); }
+      .draw-base,.draw-lid { position:absolute; border:2px solid #1d2029; border-radius:7px; box-shadow:inset 0 4px #ffffff30,inset -7px -5px #00000026; }
+      .draw-base { inset:38% 5% 0; background:var(--gift); }
+      .draw-lid { inset:25% 0 51%; background:var(--lid); z-index:3; transform-origin:12% 100%; }
+      .draw-base::after,.draw-lid::after { content:""; position:absolute; inset:0 40%; background:#f2c86f; box-shadow:inset -3px 0 #a76b37; }
+      .draw-bow { position:absolute; left:50%; top:25%; z-index:4; transform:translate(-50%,-88%); display:flex; }
+      .draw-bow i { display:block; width:clamp(14px,4vw,25px); height:17px; border:4px solid #ebbb62; border-radius:75% 75% 10% 75%; transform:rotate(13deg); }
+      .draw-bow i+i { transform:scaleX(-1) rotate(13deg); }
+      .draw-box-label { position:absolute; inset:auto 0 0; font-size:12px; font-weight:700; }
+      .draw-box.is-dim .draw-gift { opacity:.36; transform:scale(.88); }
+      .draw-box.is-opening .draw-gift { animation:gift-shake .65s ease-in-out both; }
+      .draw-box.is-opening .draw-bow { animation:gift-unribbon .5s .50s ease-in both; }
+      .draw-box.is-opening .draw-lid { animation:gift-unlid .62s .93s cubic-bezier(.2,.7,.3,1) both; }
+      .draw-box.is-opening .draw-glow { animation:gift-glow 1s .95s ease-out both; }
+      .draw-box.is-open .draw-bow,.draw-box.is-open .draw-lid { opacity:0; }
+      .draw-glow { position:absolute; inset:-24% -20% 5%; pointer-events:none; opacity:0; background:radial-gradient(ellipse,#fff4bc,#ffd77060 34%,transparent 69%); z-index:2; }
+      .draw-scroll { max-width:350px; margin:12px auto 0; padding:18px 12px; border:2px solid #e8c684; border-radius:11px; color:#453027; background:#fff4db; box-shadow:0 8px 24px #0004; transform-origin:top; animation:gift-scroll .42s ease-out both; }
+      @keyframes gift-shake { 0%,100%{transform:translateY(0)} 20%,60%{transform:translateY(-5px) rotate(-7deg)} 40%,80%{transform:translateY(-3px) rotate(7deg)} }
+      @keyframes gift-unribbon { from{opacity:1} to{transform:translate(-50%,-150%) scaleX(1.9) rotate(-18deg);opacity:0} }
+      @keyframes gift-unlid { from{transform:none;opacity:1} to{transform:translate(-13%,-170%) rotate(-28deg);opacity:0} }
+      @keyframes gift-glow { 0%,100%{opacity:0;transform:scale(.65)} 38%{opacity:1;transform:scale(1.18)} }
+      @keyframes gift-scroll { from{opacity:0;transform:translateY(-15px) scale(.88,.45)} to{opacity:1;transform:none} }
+      @media(prefers-reduced-motion:reduce){.draw-screen *{animation:none!important;transition:none!important}}
+    `}</style>
+    <section className="draw-board" aria-labelledby="draw-title">
+      <h2 id="draw-title" className="text-xl sm:text-2xl font-extrabold">내 마니또는 누구?</h2>
+      <p className="mt-2 text-sm" aria-live="polite">{stage==='idle'?'선물상자 하나를 골라보세요.':stage==='drawing'?'고른 상자를 여는 중…':'상자 속 쪽지가 열렸어요!'}</p>
+      <div className="draw-boxes">
+        {[
+          ['#ac3949','#d95865'],
+          ['#28735e','#439c79'],
+          ['#465ca2','#6987cd'],
+        ].map(([gift,lid],index)=>{
+          const selected=chosen===index;
+          return <button type="button" key={gift} disabled={stage!=='idle'}
+            className={`draw-box ${chosen!==null&&!selected?'is-dim':''} ${selected&&stage==='drawing'?'is-opening':''} ${selected&&stage==='revealed'?'is-open':''}`}
+            style={{'--gift':gift,'--lid':lid}} onClick={()=>choose(index)}
+            aria-label={`${index+1}번 선물상자`}>
+            <span className="draw-gift" aria-hidden="true">
+              <span className="draw-base"/><span className="draw-glow"/><span className="draw-lid"/>
+              <span className="draw-bow"><i/><i/></span>
             </span>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-800 mb-4">
-              {target} <span className="text-sm font-normal text-slate-500">({targetNickname})</span>
-            </h2>
-            <p className="text-slate-500 text-xs mb-6 leading-relaxed">
-              한 달 동안 {target}님을 위해<br/>비밀 요정이 되어주세요! 🎅
-            </p>
-            <button 
-              onClick={onNext}
-              className="bg-slate-700 text-white px-6 py-2 font-bold text-sm border border-slate-900 hover:bg-slate-800 transition flex items-center"
-            >
-              미니룸으로 가기 <ArrowRight className="ml-1" size={16} />
-            </button>
-          </div>
-        )}
+            <span className="draw-box-label">{index+1}번 상자</span>
+          </button>;
+        })}
       </div>
-    </div>
-  );
+      {stage==='revealed'&&<div className="draw-scroll" role="status">
+        <p className="text-xs font-bold text-red-800">내가 챙길 마니또</p>
+        <p className="mt-1 text-2xl font-extrabold break-words">{target}</p>
+        {targetNickname&&targetNickname!==target&&<p className="text-sm">{targetNickname}</p>}
+        <button type="button" onClick={onNext} className="mt-4 inline-flex items-center rounded-lg bg-[#225746] px-4 py-3 text-sm font-bold text-white">
+          미니룸으로 가기 <ArrowRight className="ml-1" size={16}/>
+        </button>
+      </div>}
+    </section>
+  </div>;
 }
 
 function DashboardView({ myName, myMemberId,incomingReadAt,onOpenIncoming,treePosts,onTreeSave,onTreeDelete,target,targetDepartment, mySanta, isRevealed, events, onEditProfile, onActivity, onOpenMessage, onGiftSubmit, profiles, pairs }) {
