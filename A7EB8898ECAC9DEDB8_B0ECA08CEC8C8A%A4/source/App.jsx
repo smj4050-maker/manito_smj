@@ -285,6 +285,7 @@ export default function App() {
   const drawSeenTask=useRef(null);
   const [showAdminAuth, setShowAdminAuth] = useState(false);
   const [adminPwd, setAdminPwd] = useState('');
+  const [adminTreeOpen, setAdminTreeOpen] = useState(false);
   const [modal, setModal] = useState({ show: false, title: '', message: '', type: 'info' });
   const [messageInput, setMessageInput] = useState('');
   const [selectedHint, setSelectedHint] = useState('🎁');
@@ -1008,6 +1009,7 @@ export default function App() {
                 onResetAllPins={handleResetAllPins}
                 onResetFeed={handleResetFeed}
                 onUndoGift={handleUndoGift}
+                onManageTree={()=>setAdminTreeOpen(true)}
               />
             )}
             {isAdmin && (activeTab === 'photos' || activeTab === 'guestbook') && (
@@ -1094,6 +1096,7 @@ export default function App() {
         </div>
       )}
 
+      {isAdmin && adminTreeOpen && <TreeBoard manageTree posts={treePosts} onDelete={handleTreeDelete} onClose={()=>setAdminTreeOpen(false)}/>}
       {modal.show && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 animate-in fade-in cyworld-font">
           <div className="bg-white border-2 border-slate-800 rounded-none p-1 w-full max-w-sm shadow-xl">
@@ -1308,7 +1311,7 @@ function buildDemoCrowdProfiles(members, profiles) {
   }));
 }
 
-function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profiles, members, onUpdateMembers, onResetPin, onResetMinime, onResetAllMinimes, onResetAllPins, onResetFeed, onUndoGift }) {
+function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profiles, members, onUpdateMembers, onResetPin, onResetMinime, onResetAllMinimes, onResetAllPins, onResetFeed, onUndoGift, onManageTree }) {
   const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [bulkText, setBulkText] = useState('');
   const [showSingleAdd, setShowSingleAdd] = useState(false);
@@ -1453,6 +1456,9 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
         </button>
       </div>
 
+      <button type="button" onClick={onManageTree} className="mb-4 rounded border border-green-700 bg-green-50 px-4 py-2 text-sm font-bold text-green-900">
+        트리 장식 관리
+      </button>
       <section className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded" aria-label="전체 초기화 관리자 전용">
         <p className="text-sm font-extrabold text-amber-900 mb-1">⚠️ 전체 초기화 · 방장 전용</p>
         <p className="text-xs text-amber-800 mb-3">초기화 전 입력 확인이 필요합니다. 마니또 배정과 선물 준비 현황은 유지됩니다.</p>
@@ -3134,7 +3140,7 @@ function TreeBoard({manageTree,posts,myMemberId,onSave,onDelete,onClose}) {
   return <button key={label} type="button" aria-pressed={selected} onClick={()=>{setKind(shape);setColor(tint);}} className={`rounded border px-1 py-2 text-xs font-bold ${selected?'border-amber-500 bg-amber-50':'border-[#dfcfb9] bg-white'}`}>
     <svg viewBox="-15 -16 30 29" width="38" height="35" className="mx-auto" aria-hidden="true"><TreeOrnament kind={shape} color={paint}/></svg>{label}
   </button>;
-})}</div><button disabled={busy||!message.trim()} onClick={save} className="w-full text-xs font-bold text-white bg-green-700 border border-green-900 py-2 mt-1 disabled:opacity-40">{busy?'장식 다는 중…':own?'내 장식 바꾸기':'내 장식 달기'}</button>{own&&<button onClick={()=>onDelete(own)} className="block mx-auto text-[10px] text-red-500 mt-2">내 장식 삭제</button>}</>}<div className="border-t border-dashed border-[#d9c5aa] mt-4 pt-3"><h3 className="text-xs text-green-800 font-bold mb-2">트리에 달린 한마디 {posts.length}개</h3><div className="space-y-2">{posts.length===0?<p className="text-xs text-slate-400 py-3 text-center">첫 장식의 주인공이 되어주세요!</p>:posts.map(post=><div key={post.memberId} className="border border-[#e2d2bc] bg-white rounded p-2"><div className="text-[10px] font-bold text-[#9a6552] mb-1">{post.nickname}{manageTree&&<button type="button" className="float-right rounded border border-red-200 px-2 py-1 font-bold text-red-700" onClick={()=>onDelete(post)}>한마디 삭제</button>}</div><p className="text-xs text-slate-700 whitespace-pre-wrap break-words">{post.message}</p></div>)}</div></div></div></div>;
+})}</div><button disabled={busy||!message.trim()} onClick={save} className="w-full text-xs font-bold text-white bg-green-700 border border-green-900 py-2 mt-1 disabled:opacity-40">{busy?'장식 다는 중…':own?'내 장식 바꾸기':'내 장식 달기'}</button>{own&&<button onClick={()=>onDelete(own)} className="block mx-auto text-[10px] text-red-500 mt-2">내 장식 삭제</button>}</>}<div className="border-t border-dashed border-[#d9c5aa] mt-4 pt-3"><h3 className="text-xs text-green-800 font-bold mb-2">트리에 달린 한마디 {posts.length}개</h3><div className="space-y-2">{posts.length===0?<p className="text-xs text-slate-400 py-3 text-center">첫 장식의 주인공이 되어주세요!</p>:posts.map(post=><div key={post.memberId} className="border border-[#e2d2bc] bg-white rounded p-2"><div className="text-[10px] font-bold text-[#9a6552] mb-1">{post.nickname}{manageTree&&<button type="button" className="float-right rounded border border-red-200 px-2 py-1 font-bold text-red-700" onClick={()=>onDelete(post)}>장식·한마디 삭제</button>}</div><p className="text-xs text-slate-700 whitespace-pre-wrap break-words">{post.message}</p></div>)}</div></div></div></div>;
 }
 
 function IncomingNotice({myName,events,profiles,readAt=0,onOpen}) {
