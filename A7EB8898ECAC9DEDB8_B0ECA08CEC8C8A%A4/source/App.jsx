@@ -10,7 +10,6 @@ import { Gift, MessageCircle, Snowflake, Users, ArrowRight, AlertCircle, LogOut,
 
 // 관리자 비밀번호나 직원 참여 링크는 소스 코드에 저장하지 않습니다.
 const appId = 'manito-xmas-app';
-const ADMIN_LOGIN_NAME = '방장';
 const ADMIN_EMAIL = 'admin@manito.invalid';
 const FIREBASE_CONFIG = {
   apiKey: 'AIzaSyCgEmWxPuI3fEFRAlirb769wXtzn_UTbtk',
@@ -111,7 +110,6 @@ async function normalizeMembers(list, previous, resetId) {
   const names = new Set(), ids = new Set();
   return Promise.all(list.map(async member => {
     const name = typeof member?.name === 'string' ? member.name.trim() : '';
-    if (name === ADMIN_LOGIN_NAME) throw new Error('방장은 관리자 로그인 이름입니다. 참가 명단에서는 다른 이름을 사용해주세요.');
     const id = typeof member?.id === 'string' && member.id ? member.id : makeId();
     if (!name || name.length > 60 || names.has(name) || ids.has(id)) throw new Error('이름은 1~60자로 입력하고, 동명이인은 숫자 등으로 구분해주세요.');
     if (id.includes('/')) throw new Error('구성원 식별번호가 올바르지 않습니다.');
@@ -261,7 +259,6 @@ export default function App() {
   const [readReady,setReadReady]=useState(false);
   const [latestPhotoAt,setLatestPhotoAt]=useState(0);
   const readAttempts=useRef(new Set());
-  const [presentationOpen,setPresentationOpen]=useState(false);
   const [photoPosts,setPhotoPosts]=useState([]);
   const [treePosts,setTreePosts]=useState([]);
   const [photosReady,setPhotosReady]=useState(false);
@@ -352,7 +349,6 @@ export default function App() {
 
   useEffect(() => {
     setSession(null); setSessionReady(false); setAssignment(null); setRevealedPairs({});
-    setPresentationOpen(isAdmin);
     setViewState(isAdmin ? 'admin' : 'login');
     // 저장된 계정은 Firebase 인증 UID에만 연결됩니다. 이름만 바꿔 다른 계정으로 전환할 수 없습니다.
     if (!user || user.isAnonymous || isAdmin) { setSessionReady(true); return; }
@@ -620,7 +616,7 @@ export default function App() {
 
   const handleAdminSetup = async () => runAction('admin', async () => {
     if (members.some(m => !m.nameKey || !m.loginEmail)) throw new Error('명단의 로그인 설정 중입니다. 잠시 후 다시 눌러주세요.');
-    const normalized = await normalizeMembers(members.filter(member => member.name.trim() !== ADMIN_LOGIN_NAME), members);
+    const normalized = await normalizeMembers(members, members);
     if (normalized.length < 2) throw new Error('최소 2명 이상의 구성원을 등록해주세요.');
     if (publicConfig.hasDraw && !window.confirm('다시 배정하면 기존 배정과 선물 준비 현황이 초기화됩니다. 다시 배정할까요?')) return false;
     const shuffled = [...normalized];
@@ -641,7 +637,7 @@ export default function App() {
         transaction.set(inviteDoc(member.inviteId), { memberId: member.id, name: member.name, active: true, targetId: target.id, targetName: target.name, targetDepartment: target.department, roundId: newRoundId });
         transaction.set(profileDoc(member.id), { name: member.name, giftSubmitted: false, giftRoundId: newRoundId }, { merge: true });
       }
-      transaction.set(dataDoc('settings_members'), { list: members });
+      transaction.set(dataDoc('settings_members'), { list: normalized });
       transaction.set(dataDoc('reveal'), { pairs });
       transaction.set(dataDoc('settings_config'), { hasDraw: true, isRevealed: false, roundId: newRoundId });
     });
@@ -652,11 +648,6 @@ export default function App() {
     const cleanName = name.trim();
     if (!cleanName) throw new Error('이름을 입력해주세요.');
     if (!/^\d{4}$/.test(pin)) throw new Error('번호는 숫자 4자리로 입력해주세요.');
-    if (cleanName === ADMIN_LOGIN_NAME) {
-      if (registering) throw new Error('방장은 로그인 탭에서 입장해주세요.');
-      await signInWithEmailAndPassword(auth, ADMIN_EMAIL, `manito-${pin}`);
-      return;
-    }
     if (registering && pin !== confirmation) throw new Error('두 번 입력한 번호가 다릅니다. 다시 확인해주세요.');
     if (!publicConfig.hasDraw) throw new Error('아직 방장이 마니또 설정을 완료하지 않았습니다. 기다려주세요!');
     const nameKey = await hashToken(cleanName), lookup = await getDocFromServer(loginDoc(nameKey));
@@ -755,13 +746,12 @@ export default function App() {
   const goDashboard = async()=>{if(drawStage==='revealed' && await markDrawSeen())setViewState('dashboard');};
 
   const toggleReveal = async () => runAction('admin', async () => {
-    const next = !publicConfig.isRevealed;
-    if(next&&!window.confirm('마니또 배정 결과를 발표 화면과 참가자 화면에 공개할까요?'))return false;
+    let next;
     await runTransaction(db, async transaction => {
       const snapshot = await transaction.get(dataDoc('settings_config'));
       const current = snapshot.exists() ? snapshot.data() : {};
       if (!current.hasDraw || current.roundId !== roundId) throw new Error('먼저 배정 상태를 확인해주세요.');
-      if(Boolean(current.isRevealed)===next)return;
+      next = !current.isRevealed;
       transaction.update(dataDoc('settings_config'), { isRevealed: next });
     });
     showModal('알림', `마니또 정체가 ${next ? '공개' : '비공개'} 되었습니다! 🎄`);
@@ -843,11 +833,11 @@ export default function App() {
   const myProfile = visibleProfiles[myName] || { nickname: myName, avatar: '🎅' };
 
   return (
-    <div data-wide-view={isAdmin&&presentationOpen?'true':undefined} className="h-[100dvh] w-full bg-[#d1d5db] cyworld-font relative overflow-hidden sm:py-4 sm:px-2 bg-[radial-gradient(#9ca3af_1px,transparent_1px)] bg-[size:12px_12px] flex items-center justify-center">
+    <div className="h-[100dvh] w-full bg-[#d1d5db] cyworld-font relative overflow-hidden sm:py-4 sm:px-2 bg-[radial-gradient(#9ca3af_1px,transparent_1px)] bg-[size:12px_12px] flex items-center justify-center">
       
       <SpriteDefinitions />
       {/* Cyworld Outer Box - 폰 화면에 꽉 차게 */}
-      <div className="mini-home-shell w-full h-full max-w-6xl sm:h-[94vh] bg-[#47a6b8] p-1 sm:p-2 sm:rounded-2xl sm:shadow-2xl sm:border-2 sm:border-slate-500 relative flex flex-col">
+      <div className="w-full h-full max-w-6xl sm:h-[94vh] bg-[#47a6b8] p-1 sm:p-2 sm:rounded-2xl sm:shadow-2xl sm:border-2 sm:border-slate-500 relative flex flex-col">
         
         {/* Inner White Box */}
         <div className="bg-white sm:border-2 border-dashed border-slate-400 sm:rounded-xl flex-1 flex flex-col relative overflow-hidden">
@@ -876,7 +866,7 @@ export default function App() {
               <Gift className="text-red-500 mr-1" size={18} /> 
               울장복의 미니홈피
             </div>
-            {(isLoggedIn||isAdmin) && (
+            {isLoggedIn && (
               <button onClick={handleLogout} className="text-[10px] sm:text-xs bg-slate-200 px-2 py-1 rounded text-slate-600 border border-slate-300 hover:bg-slate-300">
                 로그아웃
               </button>
@@ -890,9 +880,8 @@ export default function App() {
 
           {/* Dynamic Views (Content Area - 화면에 맞게 스크롤) */}
           <main data-testid="main-scroll" className="flex-1 min-h-0 flex flex-col p-2 sm:p-4 bg-slate-50 border-t-2 border-solid border-slate-400 sm:rounded-b-xl overflow-y-auto custom-scrollbar">
-            {isAdmin&&<div className="mb-2 flex justify-end"><button type="button" className="room-edit" onClick={()=>{setActiveTab('home');setPresentationOpen(value=>!value);}}>{presentationOpen?'방장 관리':'관람 화면'}</button></div>}
-            {viewState === 'admin' && activeTab === 'home' && !presentationOpen && (
-              <AdminView
+            {viewState === 'admin' && activeTab === 'home' && (
+              <AdminView 
                 onSetup={handleAdminSetup} 
                 isRevealed={config?.isRevealed} 
                 onToggleReveal={toggleReveal} 
@@ -908,14 +897,9 @@ export default function App() {
                 onUndoGift={handleUndoGift}
               />
             )}
-            {isAdmin&&presentationOpen&&<PresentationView profiles={visibleProfiles} treePosts={treePosts}
-              photos={photoPosts} photosReady={photosReady} messages={events.filter(event=>event.type==='message').length}
-              hasDraw={publicConfig.hasDraw} revealed={publicConfig.isRevealed}
-              pairs={publicConfig.isRevealed?revealedPairs:null} onToggleReveal={toggleReveal}
-              activeTab={activeTab}/>}
             {viewState === 'login' && <LoginView onLogin={handleLogin} onGoAdmin={() => setShowAdminAuth(true)} />}
             {viewState === 'profileSetup' && <ProfileSetupView onSetup={handleProfileSetup} />}
-            {isLoggedIn && viewState === 'draw' && <DrawView key={identity} target={getMyTarget()} targetDepartment={assignment?.targetDepartment} stage={drawStage} onStart={startDraw} onNext={goDashboard} profiles={visibleProfiles} />}
+            {viewState === 'draw' && <DrawView key={identity} target={getMyTarget()} targetDepartment={assignment?.targetDepartment} stage={drawStage} onStart={startDraw} onNext={goDashboard} profiles={visibleProfiles} />}
             {viewState === 'dashboard' && activeTab === 'home' && (
               <DashboardView 
                 myName={myName}
@@ -935,8 +919,8 @@ export default function App() {
                 onGiftSubmit={handleGiftSubmit}
               />
             )}
-            {((isAdmin&&!presentationOpen)||viewState==='dashboard')&&activeTab==='photos'&&<PhotoChatView posts={photoPosts} ready={photosReady} onPost={handlePhotoPost} onDelete={handlePhotoDelete} onError={fail} myMemberId={assignment?.memberId||'admin'} isAdmin={isAdmin} profiles={visibleProfiles} limitCount={photoLimit} onMore={()=>setPhotoLimit(value=>Math.min(150,value+30))}/>}
-            {((isAdmin&&!presentationOpen)||viewState==='dashboard')&&activeTab==='guestbook'&&<GuestbookView key={guestbookIncoming?'incoming':'all'} initialMineOnly={guestbookIncoming} events={visibleEvents} profiles={visibleProfiles} pairs={config.pairs} isRevealed={config.isRevealed} myName={myName} onWrite={isAdmin?null:()=>setShowMessageModal(true)}/>}
+            {(isAdmin||viewState==='dashboard')&&activeTab==='photos'&&<PhotoChatView posts={photoPosts} ready={photosReady} onPost={handlePhotoPost} onDelete={handlePhotoDelete} onError={fail} myMemberId={assignment?.memberId||'admin'} isAdmin={isAdmin} profiles={visibleProfiles} limitCount={photoLimit} onMore={()=>setPhotoLimit(value=>Math.min(150,value+30))}/>}
+            {(isAdmin||viewState==='dashboard')&&activeTab==='guestbook'&&<GuestbookView key={guestbookIncoming?'incoming':'all'} initialMineOnly={guestbookIncoming} events={visibleEvents} profiles={visibleProfiles} pairs={config.pairs} isRevealed={config.isRevealed} myName={myName} onWrite={isAdmin?null:()=>setShowMessageModal(true)}/>}
           </main>
 
         </div>
@@ -1096,12 +1080,6 @@ export default function App() {
         .room-edit { border: 1px solid #cdbba7; background: #fff; border-radius: 3px; padding: 2px 7px; color: #806757; font-size: 10px; white-space: nowrap; }
         .room-scroll { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; touch-action: pan-x pan-y; }
         .room-stage { position: relative; isolation: isolate; z-index:0; width:1000px;height:800px;margin:auto; }
-        @media (min-width: 1024px) {
-          [data-wide-view="true"] { padding:0; }
-          [data-wide-view="true"] .mini-home-shell { max-width:none; height:100%; border-radius:0; }
-          [data-wide-view="true"] .room-fit .room-stage { width:100%; }
-          [data-wide-view="true"] .room-expanded .room-stage { width:max(100%, 1600px); height:auto; aspect-ratio:1000 / 800; }
-        }
         .room-fit .room-stage { width:min(100%,1000px);height:auto;aspect-ratio:1000 / 800; }
         .room-scene {display:block;width:100%;height:100%;background:#f4f0e9;}
         .room-background-layer {opacity:.86;filter:saturate(.90);}
@@ -1243,7 +1221,6 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
           뒤로가기
         </button>
       </div>
-
 
       <div className="bg-blue-50 border border-blue-200 rounded p-3 mb-3 flex flex-wrap gap-2 items-center justify-between">
         <div><strong className="text-sm text-blue-800">🧪 {DEMO_CROWD_SIZE}명 미니룸 동작 테스트</strong><p className="text-[11px] text-blue-600">구성원 이름으로 미니룸 화면 테스트</p></div>
@@ -1496,54 +1473,6 @@ function ProfileSetupView({onSetup,initialProfile,onCancel}) {
     </div>
   </div>;
 }
-function PresentationView({profiles,treePosts,photos,photosReady,messages,hasDraw,revealed,pairs,onToggleReveal,activeTab}) {
-  const [showResults,setShowResults]=useState(false);
-  useEffect(()=>setShowResults(false),[activeTab]);
-  const tab=showResults&&revealed?'results':activeTab;
-  const [revealBusy,setRevealBusy]=useState(false);
-  const reveal=async()=>{
-    setRevealBusy(true);
-    try {
-      if(await onToggleReveal())setShowResults(!revealed);
-    } finally {setRevealBusy(false);}
-  };
-  return <section className="min-w-0 space-y-3" aria-label="방장 관람 화면">
-    <div className="flex flex-wrap justify-end gap-2">
-      {revealed&&<button type="button" onClick={()=>setShowResults(value=>!value)} className="rounded border bg-white px-3 py-2 text-sm">
-        {showResults?'돌아가기':'배정표 보기'}
-      </button>}
-      <button type="button" disabled={!hasDraw||revealBusy} onClick={reveal}
-        className="rounded bg-red-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">
-        {revealed?'공개 중지':'마니또 공개하기'}
-      </button>
-    </div>
-    <div className="w-full">
-      {tab==='home'&&<ChristmasMiniroom profiles={profiles} treePosts={treePosts} demoMode/>}
-      {tab==='photos'&&<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {!photosReady&&<p role="status">사진첩을 불러오는 중…</p>}
-        {photosReady&&!photos.some(post=>post.image)&&<p>아직 올라온 사진이 없어요.</p>}
-        {photos.filter(post=>post.image).map(post=><figure key={post.id} className="overflow-hidden rounded-lg bg-black/25">
-          <img src={post.image} alt={post.text||'사진첩 사진'} loading="lazy" className="h-64 w-full object-contain"/>
-          {(post.text||post.nickname)&&<figcaption className="break-words px-3 py-2">{post.nickname}{post.text&&<p>{post.text}</p>}</figcaption>}
-        </figure>)}
-      </div>}
-      {tab==='results'&&revealed&&<div className="rounded-xl border bg-white p-5">
-        <h3 className="mb-4 text-center text-2xl font-bold">마니또 배정표</h3>
-        <ul aria-label="왼쪽 사람은 오른쪽 사람의 마니또" className="grid grid-cols-1 gap-2 md:grid-cols-2">
-          {Object.entries(pairs||{}).sort(([a],[b])=>a.localeCompare(b,'ko')).map(([giver,recipient])=>
-            <li key={giver} className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded bg-slate-100 p-3 text-center text-lg">
-              <span>{giver}</span><span aria-label="가 챙긴 사람">→</span><strong>{recipient}</strong>
-            </li>)}
-        </ul>
-      </div>}
-      {tab==='guestbook'&&<div className="mx-auto max-w-lg rounded-xl border bg-white p-6 text-center">
-        <p className="text-2xl font-bold">지금까지 일촌평 {messages}개</p>
-        <p className="mt-3">휴대폰에서 마니또 사이트에 로그인한 뒤 <strong>일촌평</strong>을 눌러 내가 챙길 사람에게 한마디를 남겨요.</p>
-      </div>}
-    </div>
-  </section>;
-}
-
 function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSave,onTreeDelete,demoMode=false}) {
   const [selected,setSelected]=useState(null),[expanded,setExpanded]=useState(false),[treeOpen,setTreeOpen]=useState(false),[selectedNote,setSelectedNote]=useState(null);
   const [systemReducedMotion,setSystemReducedMotion]=useState(()=>window.matchMedia?.('(prefers-reduced-motion: reduce)').matches||false);
@@ -1661,7 +1590,7 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
           </g>
         </svg>
         {canvasMode&&<canvas ref={crowdCanvas} aria-hidden="true" width={1000} height={650} className="absolute inset-0 w-full h-full pointer-events-none"/>}
-        {!demoMode&&notes.map((note,index)=>{const point=ornamentPoint(index);return <button key={note.memberId} type="button" className="tree-note-hit" aria-label={`${note.nickname}님의 트리 장식`} style={{left:`${point.x/10}%`,top:`${point.y/6.5}%`}} onClick={()=>setSelectedNote(note)}/>;})}
+        {notes.map((note,index)=>{const point=ornamentPoint(index);return <button key={note.memberId} type="button" className="tree-note-hit" aria-label={`${note.nickname}님의 트리 장식`} style={{left:`${point.x/10}%`,top:`${point.y/6.5}%`}} onClick={()=>setSelectedNote(note)}/>;})}
       </div>
     </div>
     {systemReducedMotion&&<button type="button" className="room-edit m-2" aria-pressed={playMotion}
@@ -1999,32 +1928,53 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
           top: -14px;
           left: 50%;
           transform: translateX(-50%);
-          width: 36px;
-          height: 16px;
+          width: 44px;
+          height: 22px;
           z-index: 5;
+          transform-origin: 50% 75%;
         }
 
-        .xmas-gift-bow::before,
-        .xmas-gift-bow::after {
-          content: "";
+        .xmas-bow-loop {
           position: absolute;
           top: 1px;
-          width: 17px;
-          height: 13px;
+          width: 19px;
+          height: 14px;
           border: 2.8px solid #f2d388;
-          border-radius: 60% 60% 10% 60%;
-          background: linear-gradient(135deg, rgba(247, 225, 171, 0.35), rgba(185, 137, 55, 0.15));
+          border-radius: 65% 65% 12% 65%;
+          background: linear-gradient(135deg, rgba(247, 225, 171, 0.42), rgba(185, 137, 55, 0.18));
           box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+          transform-origin: 85% 85%;
         }
 
-        .xmas-gift-bow::before {
-          left: 1px;
+        .xmas-bow-loop.left {
+          left: 2px;
           transform: rotate(-16deg);
         }
 
-        .xmas-gift-bow::after {
-          right: 1px;
+        .xmas-bow-loop.right {
+          right: 2px;
           transform: scaleX(-1) rotate(-16deg);
+        }
+
+        .xmas-bow-tail {
+          position: absolute;
+          top: 9px;
+          width: 4px;
+          height: 15px;
+          border-radius: 2px;
+          background: linear-gradient(180deg, #f7e1ab 0%, #c7953e 100%);
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+          transform-origin: 50% 0%;
+        }
+
+        .xmas-bow-tail.left {
+          left: 14px;
+          transform: rotate(22deg);
+        }
+
+        .xmas-bow-tail.right {
+          right: 14px;
+          transform: rotate(-22deg);
         }
 
         .xmas-gift-knot {
@@ -2032,11 +1982,12 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
           left: 50%;
           top: 7px;
           transform: translateX(-50%);
-          width: 8px;
-          height: 8px;
+          width: 9px;
+          height: 9px;
           border-radius: 50%;
-          background: radial-gradient(circle at 35% 35%, #fff4cf, #c7953e);
+          background: radial-gradient(circle at 35% 35%, #fff6d6, #c7953e);
           box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+          z-index: 2;
         }
 
         .xmas-gift-body {
@@ -2054,9 +2005,8 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
           overflow: hidden;
         }
 
-        /* 세로 금박 리본 */
-        .xmas-gift-body::before {
-          content: "";
+        /* 세로 금박 리본 & 풀리면서 흘러내리는 꼬리 */
+        .xmas-ribbon-v {
           position: absolute;
           left: 50%;
           top: 0;
@@ -2064,6 +2014,31 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
           width: 14px;
           height: 100%;
           background: linear-gradient(90deg, #b98937 0%, #f7e1ab 50%, #b98937 100%);
+          transform-origin: 50% 0%;
+        }
+
+        .xmas-ribbon-tail {
+          position: absolute;
+          top: 50%;
+          width: 11px;
+          height: 34px;
+          background: linear-gradient(180deg, #f7e1ab 0%, #d4a448 65%, #9c6e23 100%);
+          border-radius: 0 0 5px 5px;
+          box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+          opacity: 0;
+          z-index: 3;
+          pointer-events: none;
+          transform-origin: 50% 0%;
+        }
+
+        .xmas-ribbon-tail.left {
+          left: calc(50% - 7px);
+          transform: rotate(8deg) scaleY(0.1);
+        }
+
+        .xmas-ribbon-tail.right {
+          left: calc(50% - 4px);
+          transform: rotate(-8deg) scaleY(0.1);
         }
 
         /* 가로 금박 리본 */
@@ -2077,6 +2052,7 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
           height: 10px;
           background: linear-gradient(180deg, #b98937 0%, #f7e1ab 50%, #b98937 100%);
           opacity: 0.92;
+          transform-origin: 50% 50%;
         }
 
         .xmas-box-label {
@@ -2087,7 +2063,7 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
           color: rgba(237, 208, 146, 0.88);
         }
 
-        /* 상자 열림 (팡!) 모션 - 1950ms에 맞춤 */
+        /* 상자 열림 (리본 풀림 -> 뚜껑 팡!) 모션 - 1950ms 타임라인 */
         .xmas-box-glow {
           position: absolute;
           inset: -38px -28px 6px;
@@ -2102,34 +2078,113 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
           z-index: 6;
         }
 
+        /* 0s~0.55s: 두근거림 흔들림 */
         .xmas-box-btn.is-opening .xmas-gift {
-          animation: xmas-shake 0.72s ease-in-out both;
+          animation: xmas-shake 0.56s ease-in-out both;
+        }
+
+        /* 0.52s~1.05s: 리본 매듭이 슥 풀리며 좌우 날개·꼬리가 펼쳐짐 */
+        .xmas-box-btn.is-opening .xmas-bow-loop.left {
+          animation: xmas-unloop-left 0.52s 0.52s cubic-bezier(0.22, 1.25, 0.36, 1) forwards;
+        }
+
+        .xmas-box-btn.is-opening .xmas-bow-loop.right {
+          animation: xmas-unloop-right 0.52s 0.52s cubic-bezier(0.22, 1.25, 0.36, 1) forwards;
+        }
+
+        .xmas-box-btn.is-opening .xmas-bow-tail.left {
+          animation: xmas-untail-left 0.55s 0.56s ease-out forwards;
+        }
+
+        .xmas-box-btn.is-opening .xmas-bow-tail.right {
+          animation: xmas-untail-right 0.55s 0.56s ease-out forwards;
+        }
+
+        .xmas-box-btn.is-opening .xmas-gift-knot {
+          animation: xmas-knot-pop 0.35s 0.72s ease-out forwards;
+        }
+
+        /* 리본이 풀리며 상자 위·옆으로 촤르륵 흘러내림 */
+        .xmas-box-btn.is-opening .xmas-ribbon-v {
+          animation: xmas-ribbon-loosen 0.45s 0.65s ease-in forwards;
+        }
+
+        .xmas-box-btn.is-opening .xmas-ribbon-tail.left {
+          animation: xmas-droop-left 0.68s 0.72s cubic-bezier(0.25, 0.9, 0.35, 1.1) forwards;
+        }
+
+        .xmas-box-btn.is-opening .xmas-ribbon-tail.right {
+          animation: xmas-droop-right 0.68s 0.72s cubic-bezier(0.25, 0.9, 0.35, 1.1) forwards;
+        }
+
+        /* 1.12s~: 풀린 리본 사이로 뚜껑이 팡! 튀어 오름 */
+        .xmas-box-btn.is-opening .xmas-gift-lid {
+          animation: xmas-pop-lid 0.68s 1.12s cubic-bezier(0.18, 0.88, 0.3, 1.15) forwards;
         }
 
         .xmas-box-btn.is-opening .xmas-gift-bow {
-          animation: xmas-unbow 0.48s 0.62s ease-in forwards;
-        }
-
-        .xmas-box-btn.is-opening .xmas-gift-lid {
-          animation: xmas-pop-lid 0.68s 1.02s cubic-bezier(0.18, 0.88, 0.3, 1.15) forwards;
+          animation: xmas-bow-flyaway 0.62s 0.98s cubic-bezier(0.2, 0.85, 0.3, 1) forwards;
         }
 
         .xmas-box-btn.is-opening .xmas-box-glow {
-          animation: xmas-pop-glow 0.95s 1.02s ease-out forwards;
+          animation: xmas-pop-glow 0.85s 1.14s ease-out forwards;
         }
 
         @keyframes xmas-shake {
           0%, 100% { transform: scale(1.06) rotate(0deg); }
-          18% { transform: scale(1.1) translateY(-4px) rotate(-6deg); }
-          36% { transform: scale(1.1) translateY(-3px) rotate(6deg); }
-          54% { transform: scale(1.13) translateY(-5px) rotate(-5deg); }
-          72% { transform: scale(1.13) translateY(-4px) rotate(5deg); }
-          88% { transform: scale(1.16) translateY(-2px) rotate(0deg); }
+          20% { transform: scale(1.1) translateY(-3px) rotate(-5deg); }
+          40% { transform: scale(1.1) translateY(-2px) rotate(5deg); }
+          60% { transform: scale(1.12) translateY(-4px) rotate(-4deg); }
+          80% { transform: scale(1.12) translateY(-3px) rotate(4deg); }
         }
 
-        @keyframes xmas-unbow {
-          from { opacity: 1; transform: translateX(-50%) scale(1); }
-          to { opacity: 0; transform: translateX(-50%) translateY(-28px) scale(1.45); }
+        @keyframes xmas-unloop-left {
+          0% { transform: rotate(-16deg) scale(1); }
+          55% { transform: rotate(-56deg) translate(-6px, -4px) scale(1.18, 0.82); }
+          100% { transform: rotate(-82deg) translate(-12px, 6px) scale(1.3, 0.55); opacity: 0.75; }
+        }
+
+        @keyframes xmas-unloop-right {
+          0% { transform: scaleX(-1) rotate(-16deg) scale(1); }
+          55% { transform: scaleX(-1) rotate(-56deg) translate(-6px, -4px) scale(1.18, 0.82); }
+          100% { transform: scaleX(-1) rotate(-82deg) translate(-12px, 6px) scale(1.3, 0.55); opacity: 0.75; }
+        }
+
+        @keyframes xmas-untail-left {
+          0% { transform: rotate(22deg) scaleY(1); }
+          100% { transform: rotate(48deg) translate(-5px, 6px) scaleY(1.35); opacity: 0.5; }
+        }
+
+        @keyframes xmas-untail-right {
+          0% { transform: rotate(-22deg) scaleY(1); }
+          100% { transform: rotate(-48deg) translate(5px, 6px) scaleY(1.35); opacity: 0.5; }
+        }
+
+        @keyframes xmas-knot-pop {
+          0% { transform: translateX(-50%) scale(1); opacity: 1; }
+          100% { transform: translateX(-50%) scale(1.8); opacity: 0; }
+        }
+
+        @keyframes xmas-ribbon-loosen {
+          0% { transform: translateX(-50%) scaleY(1); opacity: 1; }
+          100% { transform: translateX(-50%) scaleY(0.15); opacity: 0; }
+        }
+
+        @keyframes xmas-droop-left {
+          0% { opacity: 0; transform: translate(0, 0) rotate(6deg) scaleY(0.2); }
+          30% { opacity: 1; transform: translate(-4px, 6px) rotate(16deg) scaleY(0.85); }
+          100% { opacity: 0; transform: translate(-18px, 34px) rotate(32deg) scaleY(1.25); }
+        }
+
+        @keyframes xmas-droop-right {
+          0% { opacity: 0; transform: translate(0, 0) rotate(-6deg) scaleY(0.2); }
+          30% { opacity: 1; transform: translate(4px, 6px) rotate(-16deg) scaleY(0.85); }
+          100% { opacity: 0; transform: translate(18px, 34px) rotate(-32deg) scaleY(1.25); }
+        }
+
+        @keyframes xmas-bow-flyaway {
+          0% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+          100% { opacity: 0; transform: translateX(-50%) translateY(-46px) rotate(22deg) scale(1.25); }
         }
 
         @keyframes xmas-pop-lid {
@@ -2167,7 +2222,7 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
 
         .xmas-box-btn.is-opening .xmas-sparkle {
           opacity: 0;
-          animation: xmas-burst 0.85s 1.05s cubic-bezier(0.14, 0.85, 0.3, 1) forwards;
+          animation: xmas-burst 0.8s 1.15s cubic-bezier(0.14, 0.85, 0.3, 1) forwards;
         }
 
         @keyframes xmas-burst {
@@ -2328,7 +2383,7 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
             {stage === 'idle'
               ? '마음에 드는 선물상자 하나를 선택해 주세요'
               : stage === 'drawing'
-              ? '두근두근, 선물상자가 열리고 있어요…'
+              ? '리본이 풀리며 상자가 열리고 있어요…'
               : '선물상자가 열렸어요!'}
           </p>
 
@@ -2355,10 +2410,18 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
                       <span className="xmas-box-glow" />
                       <span className="xmas-gift-lid" style={{ background: box.lid }}>
                         <span className="xmas-gift-bow">
+                          <span className="xmas-bow-loop left" />
+                          <span className="xmas-bow-loop right" />
+                          <span className="xmas-bow-tail left" />
+                          <span className="xmas-bow-tail right" />
                           <span className="xmas-gift-knot" />
                         </span>
                       </span>
-                      <span className="xmas-gift-body" style={{ background: box.body }} />
+                      <span className="xmas-gift-body" style={{ background: box.body }}>
+                        <span className="xmas-ribbon-v" />
+                      </span>
+                      <span className="xmas-ribbon-tail left" />
+                      <span className="xmas-ribbon-tail right" />
                       {isOpening && (
                         <span className="xmas-sparkle-layer">
                           {sparkles.map((sp, sIdx) => (
