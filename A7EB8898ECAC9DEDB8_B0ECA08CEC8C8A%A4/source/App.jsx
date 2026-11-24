@@ -899,7 +899,7 @@ export default function App() {
             )}
             {viewState === 'login' && <LoginView onLogin={handleLogin} onGoAdmin={() => setShowAdminAuth(true)} />}
             {viewState === 'profileSetup' && <ProfileSetupView onSetup={handleProfileSetup} />}
-            {viewState === 'draw' && <DrawView key={identity} target={getMyTarget()} stage={drawStage} onStart={startDraw} onNext={goDashboard} profiles={visibleProfiles} />}
+            {viewState === 'draw' && <DrawView key={identity} target={getMyTarget()} targetDepartment={assignment?.targetDepartment} stage={drawStage} onStart={startDraw} onNext={goDashboard} profiles={visibleProfiles} />}
             {viewState === 'dashboard' && activeTab === 'home' && (
               <DashboardView 
                 myName={myName}
@@ -1656,80 +1656,695 @@ function LoginView({ onLogin, onGoAdmin }) {
   );
 }
 
-function DrawView({ target, stage, onStart, onNext, profiles }) {
-  const [chosen,setChosen]=useState(null);
-  const targetNickname=profiles?.[target]?.nickname;
-  const choose=index=>{
-    if(stage!=='idle'||chosen!==null)return;
+function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }) {
+  const [chosen, setChosen] = useState(null);
+  const targetNickname = profiles?.[target]?.nickname;
+  const deptLabel = targetDepartment && targetDepartment !== '미분류' ? targetDepartment : '';
+
+  const boxes = [
+    {
+      id: 0,
+      label: 'No. 1',
+      body: 'linear-gradient(155deg, #7c1828 0%, #4d0a15 100%)',
+      lid: 'linear-gradient(155deg, #941f32 0%, #610e1c 100%)',
+    },
+    {
+      id: 1,
+      label: 'No. 2',
+      body: 'linear-gradient(155deg, #174937 0%, #0b281d 100%)',
+      lid: 'linear-gradient(155deg, #1f5f48 0%, #103527 100%)',
+    },
+    {
+      id: 2,
+      label: 'No. 3',
+      body: 'linear-gradient(155deg, #1d3154 0%, #0e1a30 100%)',
+      lid: 'linear-gradient(155deg, #27406e 0%, #142340 100%)',
+    },
+  ];
+
+  const sparkles = [
+    { tx: '-115px', ty: '-78px', s: 1.1, d: '0s', c: '#fff5cf' },
+    { tx: '-88px', ty: '-118px', s: 0.9, d: '0.04s', c: '#e8c476' },
+    { tx: '-38px', ty: '-132px', s: 1.2, d: '0.02s', c: '#fff8dc' },
+    { tx: '28px', ty: '-130px', s: 1.0, d: '0.05s', c: '#f2d388' },
+    { tx: '84px', ty: '-114px', s: 1.15, d: '0.01s', c: '#fff5cf' },
+    { tx: '118px', ty: '-72px', s: 0.85, d: '0.06s', c: '#e5be6c' },
+    { tx: '126px', ty: '-10px', s: 1.0, d: '0.03s', c: '#fff2be' },
+    { tx: '104px', ty: '48px', s: 0.9, d: '0.07s', c: '#d9ae59' },
+    { tx: '-124px', ty: '-12px', s: 1.0, d: '0.05s', c: '#f5d996' },
+    { tx: '-102px', ty: '46px', s: 0.85, d: '0.02s', c: '#e5be6c' },
+    { tx: '-56px', ty: '-66px', s: 0.75, d: '0.08s', c: '#ffffff' },
+    { tx: '58px', ty: '-64px', s: 0.8, d: '0.04s', c: '#ffffff' },
+    { tx: '0px', ty: '-148px', s: 1.25, d: '0.01s', c: '#fff8dc' },
+    { tx: '-68px', ty: '86px', s: 0.75, d: '0.06s', c: '#f3d48b' },
+    { tx: '66px', ty: '84px', s: 0.8, d: '0.03s', c: '#f3d48b' },
+    { tx: '0px', ty: '96px', s: 0.7, d: '0.08s', c: '#fff5cf' },
+  ];
+
+  const choose = index => {
+    if (stage !== 'idle' || chosen !== null) return;
     setChosen(index);
     onStart();
   };
 
-  return <div className="draw-screen">
-    <style>{`
-      .draw-screen { min-height: min(540px,100%); margin:auto; width:100%; max-width:600px; color:#fff3da; text-align:center; }
-      .draw-board { padding:24px 12px; border:2px solid #c49155; border-radius:20px; background:radial-gradient(ellipse at 50% 65%,#355c53,#142d39 72%); box-shadow:inset 0 0 24px #081d22,0 8px 20px #142d3930; }
-      .draw-boxes { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); margin:28px auto 10px; max-width:410px; gap:8px; }
-      .draw-box { position:relative; width:100%; height:134px; padding:0; color:#fff3da; border:0; background:none; }
-      .draw-box:enabled { cursor:pointer; }
-      .draw-box:focus-visible { outline:2px solid #ffdb8a; outline-offset:3px; border-radius:10px; }
-      .draw-gift { position:absolute; inset:14px 8% 26px; transform-origin:50% 95%; transition:transform .2s ease,opacity .35s ease; }
-      .draw-box:enabled:hover .draw-gift,.draw-box:enabled:focus-visible .draw-gift { transform:translateY(-8px) rotate(-4deg); }
-      .draw-base,.draw-lid { position:absolute; border:2px solid #1d2029; border-radius:7px; box-shadow:inset 0 4px #ffffff30,inset -7px -5px #00000026; }
-      .draw-base { inset:38% 5% 0; background:var(--gift); }
-      .draw-lid { inset:25% 0 51%; background:var(--lid); z-index:3; transform-origin:12% 100%; }
-      .draw-base::after,.draw-lid::after { content:""; position:absolute; inset:0 40%; background:#f2c86f; box-shadow:inset -3px 0 #a76b37; }
-      .draw-bow { position:absolute; left:50%; top:25%; z-index:4; transform:translate(-50%,-88%); display:flex; }
-      .draw-bow i { display:block; width:clamp(14px,4vw,25px); height:17px; border:4px solid #ebbb62; border-radius:75% 75% 10% 75%; transform:rotate(13deg); }
-      .draw-bow i+i { transform:scaleX(-1) rotate(13deg); }
-      .draw-box-label { position:absolute; inset:auto 0 0; font-size:12px; font-weight:700; }
-      .draw-box.is-dim .draw-gift { opacity:.36; transform:scale(.88); }
-      .draw-box.is-opening .draw-gift { animation:gift-shake .65s ease-in-out both; }
-      .draw-box.is-opening .draw-bow { animation:gift-unribbon .5s .50s ease-in both; }
-      .draw-box.is-opening .draw-lid { animation:gift-unlid .62s .93s cubic-bezier(.2,.7,.3,1) both; }
-      .draw-box.is-opening .draw-glow { animation:gift-glow 1s .95s ease-out both; }
-      .draw-box.is-open .draw-bow,.draw-box.is-open .draw-lid { opacity:0; }
-      .draw-glow { position:absolute; inset:-24% -20% 5%; pointer-events:none; opacity:0; background:radial-gradient(ellipse,#fff4bc,#ffd77060 34%,transparent 69%); z-index:2; }
-      .draw-scroll { max-width:350px; margin:12px auto 0; padding:18px 12px; border:2px solid #e8c684; border-radius:11px; color:#453027; background:#fff4db; box-shadow:0 8px 24px #0004; transform-origin:top; animation:gift-scroll .42s ease-out both; }
-      @keyframes gift-shake { 0%,100%{transform:translateY(0)} 20%,60%{transform:translateY(-5px) rotate(-7deg)} 40%,80%{transform:translateY(-3px) rotate(7deg)} }
-      @keyframes gift-unribbon { from{opacity:1} to{transform:translate(-50%,-150%) scaleX(1.9) rotate(-18deg);opacity:0} }
-      @keyframes gift-unlid { from{transform:none;opacity:1} to{transform:translate(-13%,-170%) rotate(-28deg);opacity:0} }
-      @keyframes gift-glow { 0%,100%{opacity:0;transform:scale(.65)} 38%{opacity:1;transform:scale(1.18)} }
-      @keyframes gift-scroll { from{opacity:0;transform:translateY(-15px) scale(.88,.45)} to{opacity:1;transform:none} }
-      @media(prefers-reduced-motion:reduce){.draw-screen *{animation:none!important;transition:none!important}}
-    `}</style>
-    <section className="draw-board" aria-labelledby="draw-title">
-      <h2 id="draw-title" className="text-xl sm:text-2xl font-extrabold">내 마니또는 누구?</h2>
-      <p className="mt-2 text-sm" aria-live="polite">{stage==='idle'?'선물상자 하나를 골라보세요.':stage==='drawing'?'고른 상자를 여는 중…':'상자 속 쪽지가 열렸어요!'}</p>
-      <div className="draw-boxes">
-        {[
-          ['#ac3949','#d95865'],
-          ['#28735e','#439c79'],
-          ['#465ca2','#6987cd'],
-        ].map(([gift,lid],index)=>{
-          const selected=chosen===index;
-          return <button type="button" key={gift} disabled={stage!=='idle'}
-            className={`draw-box ${chosen!==null&&!selected?'is-dim':''} ${selected&&stage==='drawing'?'is-opening':''} ${selected&&stage==='revealed'?'is-open':''}`}
-            style={{'--gift':gift,'--lid':lid}} onClick={()=>choose(index)}
-            aria-label={`${index+1}번 선물상자`}>
-            <span className="draw-gift" aria-hidden="true">
-              <span className="draw-base"/><span className="draw-glow"/><span className="draw-lid"/>
-              <span className="draw-bow"><i/><i/></span>
-            </span>
-            <span className="draw-box-label">{index+1}번 상자</span>
-          </button>;
-        })}
-      </div>
-      {stage==='revealed'&&<div className="draw-scroll" role="status">
-        <p className="text-xs font-bold text-red-800">내가 챙길 마니또</p>
-        <p className="mt-1 text-2xl font-extrabold break-words">{target}</p>
-        {targetNickname&&targetNickname!==target&&<p className="text-sm">{targetNickname}</p>}
-        <button type="button" onClick={onNext} className="mt-4 inline-flex items-center rounded-lg bg-[#225746] px-4 py-3 text-sm font-bold text-white">
-          미니룸으로 가기 <ArrowRight className="ml-1" size={16}/>
-        </button>
-      </div>}
-    </section>
-  </div>;
+  return (
+    <div className="xmas-draw-wrap">
+      <style>{`
+        .xmas-draw-wrap {
+          margin: auto;
+          width: 100%;
+          max-width: 560px;
+          padding: 4px 0;
+        }
+
+        .xmas-draw-board {
+          position: relative;
+          overflow: hidden;
+          padding: 30px 18px 28px;
+          border-radius: 22px;
+          border: 1.5px solid rgba(229, 193, 125, 0.58);
+          background:
+            radial-gradient(circle at 50% 12%, rgba(236, 198, 126, 0.18), transparent 48%),
+            radial-gradient(circle at 50% 95%, #123327 0%, #091d16 60%, #05110d 100%);
+          box-shadow:
+            inset 0 0 0 6px rgba(229, 193, 125, 0.08),
+            inset 0 0 36px rgba(0, 0, 0, 0.55),
+            0 16px 36px rgba(5, 17, 13, 0.35);
+          color: #fbf6ea;
+          text-align: center;
+        }
+
+        /* 내부 얇은 골드 프레임 */
+        .xmas-draw-board::before {
+          content: "";
+          position: absolute;
+          inset: 9px;
+          border-radius: 15px;
+          border: 1px solid rgba(229, 193, 125, 0.24);
+          pointer-events: none;
+        }
+
+        /* 은은한 보케 빛망울 & 눈송이 */
+        .xmas-bokeh {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background-image:
+            radial-gradient(2.2px 2.2px at 14% 20%, rgba(255, 241, 200, 0.65), transparent),
+            radial-gradient(3px 3px at 86% 16%, rgba(255, 241, 200, 0.5), transparent),
+            radial-gradient(2px 2px at 78% 72%, rgba(255, 241, 200, 0.45), transparent),
+            radial-gradient(2.4px 2.4px at 20% 78%, rgba(255, 241, 200, 0.5), transparent),
+            radial-gradient(1.8px 1.8px at 52% 28%, rgba(255, 255, 255, 0.45), transparent),
+            radial-gradient(2px 2px at 34% 12%, rgba(255, 245, 215, 0.55), transparent),
+            radial-gradient(2px 2px at 68% 36%, rgba(255, 245, 215, 0.4), transparent);
+          animation: xmas-twinkle 3.8s ease-in-out infinite alternate;
+        }
+
+        .xmas-snow-layer {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          overflow: hidden;
+        }
+
+        .xmas-snow-dot {
+          position: absolute;
+          top: -8px;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(255, 255, 255, 0.9), rgba(255, 245, 220, 0.2));
+          animation: xmas-snowfall linear infinite;
+        }
+
+        @keyframes xmas-twinkle {
+          0% { opacity: 0.45; transform: translateY(0); }
+          100% { opacity: 0.95; transform: translateY(-4px); }
+        }
+
+        @keyframes xmas-snowfall {
+          0% { transform: translateY(-10px) translateX(0); opacity: 0; }
+          15% { opacity: 0.75; }
+          85% { opacity: 0.65; }
+          100% { transform: translateY(420px) translateX(18px); opacity: 0; }
+        }
+
+        .xmas-draw-content {
+          position: relative;
+          z-index: 2;
+        }
+
+        .xmas-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 13px;
+          border-radius: 999px;
+          border: 1px solid rgba(229, 193, 125, 0.45);
+          background: rgba(229, 193, 125, 0.1);
+          color: #edd092;
+          font-size: 10.5px;
+          letter-spacing: 0.16em;
+          font-weight: 700;
+          margin-bottom: 14px;
+        }
+
+        .xmas-title {
+          margin: 0 auto;
+          max-width: 340px;
+          font-size: 20px;
+          line-height: 1.45;
+          font-weight: 800;
+          letter-spacing: -0.02em;
+          color: #fdf9ef;
+          text-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+          word-break: keep-all;
+        }
+
+        @media (min-width: 640px) {
+          .xmas-title { font-size: 22px; max-width: 420px; }
+        }
+
+        .xmas-subtitle {
+          margin: 8px 0 0;
+          font-size: 12.5px;
+          color: rgba(247, 239, 222, 0.74);
+          word-break: keep-all;
+        }
+
+        /* 3개 선물상자 영역 */
+        .xmas-boxes {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 12px;
+          max-width: 400px;
+          margin: 34px auto 12px;
+          align-items: end;
+        }
+
+        .xmas-box-btn {
+          position: relative;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: flex-end;
+          padding: 16px 4px 4px;
+          border: 0;
+          background: none;
+          color: #edd092;
+          outline: none;
+          transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease;
+        }
+
+        .xmas-box-btn:enabled {
+          cursor: pointer;
+        }
+
+        .xmas-box-btn:focus-visible {
+          outline: 2px solid #f5dca4;
+          outline-offset: 4px;
+          border-radius: 14px;
+        }
+
+        .xmas-box-btn:enabled:hover .xmas-gift,
+        .xmas-box-btn:enabled:focus-visible .xmas-gift {
+          transform: translateY(-9px) scale(1.05);
+          filter: drop-shadow(0 14px 20px rgba(229, 193, 125, 0.25));
+        }
+
+        .xmas-box-btn.is-dim {
+          opacity: 0.22;
+          transform: scale(0.86);
+          pointer-events: none;
+        }
+
+        .xmas-gift {
+          position: relative;
+          width: 84px;
+          height: 82px;
+          transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), filter 0.3s ease;
+        }
+
+        @media (max-width: 400px) {
+          .xmas-gift { width: 74px; height: 74px; }
+        }
+
+        .xmas-gift-shadow {
+          position: absolute;
+          left: 50%;
+          bottom: -6px;
+          width: 78%;
+          height: 12px;
+          transform: translateX(-50%);
+          border-radius: 50%;
+          background: radial-gradient(ellipse, rgba(0, 0, 0, 0.65), transparent 72%);
+        }
+
+        .xmas-gift-lid {
+          position: relative;
+          z-index: 4;
+          width: calc(100% + 8px);
+          height: 22px;
+          margin-left: -4px;
+          border-radius: 6px;
+          border: 1px solid rgba(242, 211, 136, 0.45);
+          box-shadow:
+            inset 0 2px 3px rgba(255, 255, 255, 0.18),
+            0 6px 14px rgba(0, 0, 0, 0.42);
+          transform-origin: 18% 100%;
+        }
+
+        .xmas-gift-lid::after {
+          content: "";
+          position: absolute;
+          left: 50%;
+          top: 0;
+          transform: translateX(-50%);
+          width: 14px;
+          height: 100%;
+          background: linear-gradient(90deg, #b98937 0%, #f7e1ab 50%, #b98937 100%);
+        }
+
+        .xmas-gift-bow {
+          position: absolute;
+          top: -14px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 36px;
+          height: 16px;
+          z-index: 5;
+        }
+
+        .xmas-gift-bow::before,
+        .xmas-gift-bow::after {
+          content: "";
+          position: absolute;
+          top: 1px;
+          width: 17px;
+          height: 13px;
+          border: 2.8px solid #f2d388;
+          border-radius: 60% 60% 10% 60%;
+          background: linear-gradient(135deg, rgba(247, 225, 171, 0.35), rgba(185, 137, 55, 0.15));
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+        }
+
+        .xmas-gift-bow::before {
+          left: 1px;
+          transform: rotate(-16deg);
+        }
+
+        .xmas-gift-bow::after {
+          right: 1px;
+          transform: scaleX(-1) rotate(-16deg);
+        }
+
+        .xmas-gift-knot {
+          position: absolute;
+          left: 50%;
+          top: 7px;
+          transform: translateX(-50%);
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: radial-gradient(circle at 35% 35%, #fff4cf, #c7953e);
+          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+        }
+
+        .xmas-gift-body {
+          position: relative;
+          z-index: 2;
+          width: 100%;
+          height: 60px;
+          margin-top: -2px;
+          border-radius: 0 0 8px 8px;
+          border: 1px solid rgba(242, 211, 136, 0.32);
+          border-top: none;
+          box-shadow:
+            inset 0 -8px 16px rgba(0, 0, 0, 0.35),
+            0 12px 22px rgba(0, 0, 0, 0.45);
+          overflow: hidden;
+        }
+
+        /* 세로 금박 리본 */
+        .xmas-gift-body::before {
+          content: "";
+          position: absolute;
+          left: 50%;
+          top: 0;
+          transform: translateX(-50%);
+          width: 14px;
+          height: 100%;
+          background: linear-gradient(90deg, #b98937 0%, #f7e1ab 50%, #b98937 100%);
+        }
+
+        /* 가로 금박 리본 */
+        .xmas-gift-body::after {
+          content: "";
+          position: absolute;
+          left: 0;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 100%;
+          height: 10px;
+          background: linear-gradient(180deg, #b98937 0%, #f7e1ab 50%, #b98937 100%);
+          opacity: 0.92;
+        }
+
+        .xmas-box-label {
+          margin-top: 12px;
+          font-size: 11.5px;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          color: rgba(237, 208, 146, 0.88);
+        }
+
+        /* 상자 열림 (팡!) 모션 - 1950ms에 맞춤 */
+        .xmas-box-glow {
+          position: absolute;
+          inset: -38px -28px 6px;
+          border-radius: 50%;
+          pointer-events: none;
+          opacity: 0;
+          z-index: 3;
+          background: radial-gradient(circle, #fffbe2 0%, rgba(247, 216, 138, 0.68) 32%, transparent 70%);
+        }
+
+        .xmas-box-btn.is-opening {
+          z-index: 6;
+        }
+
+        .xmas-box-btn.is-opening .xmas-gift {
+          animation: xmas-shake 0.72s ease-in-out both;
+        }
+
+        .xmas-box-btn.is-opening .xmas-gift-bow {
+          animation: xmas-unbow 0.48s 0.62s ease-in forwards;
+        }
+
+        .xmas-box-btn.is-opening .xmas-gift-lid {
+          animation: xmas-pop-lid 0.68s 1.02s cubic-bezier(0.18, 0.88, 0.3, 1.15) forwards;
+        }
+
+        .xmas-box-btn.is-opening .xmas-box-glow {
+          animation: xmas-pop-glow 0.95s 1.02s ease-out forwards;
+        }
+
+        @keyframes xmas-shake {
+          0%, 100% { transform: scale(1.06) rotate(0deg); }
+          18% { transform: scale(1.1) translateY(-4px) rotate(-6deg); }
+          36% { transform: scale(1.1) translateY(-3px) rotate(6deg); }
+          54% { transform: scale(1.13) translateY(-5px) rotate(-5deg); }
+          72% { transform: scale(1.13) translateY(-4px) rotate(5deg); }
+          88% { transform: scale(1.16) translateY(-2px) rotate(0deg); }
+        }
+
+        @keyframes xmas-unbow {
+          from { opacity: 1; transform: translateX(-50%) scale(1); }
+          to { opacity: 0; transform: translateX(-50%) translateY(-28px) scale(1.45); }
+        }
+
+        @keyframes xmas-pop-lid {
+          0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+          35% { transform: translate(-8px, -34px) rotate(-18deg) scale(1.04); opacity: 1; }
+          100% { transform: translate(-22px, -78px) rotate(-34deg) scale(0.92); opacity: 0; }
+        }
+
+        @keyframes xmas-pop-glow {
+          0% { opacity: 0; transform: scale(0.45); }
+          35% { opacity: 1; transform: scale(1.35); }
+          100% { opacity: 0; transform: scale(1.75); }
+        }
+
+        /* 팡! 골드 폭죽 파티클 */
+        .xmas-sparkle-layer {
+          position: absolute;
+          top: 42%;
+          left: 50%;
+          width: 0;
+          height: 0;
+          pointer-events: none;
+          z-index: 8;
+        }
+
+        .xmas-sparkle {
+          position: absolute;
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: var(--sc);
+          box-shadow: 0 0 8px var(--sc);
+          animation: xmas-burst 0.95s cubic-bezier(0.14, 0.85, 0.3, 1) forwards;
+        }
+
+        .xmas-box-btn.is-opening .xmas-sparkle {
+          opacity: 0;
+          animation: xmas-burst 0.85s 1.05s cubic-bezier(0.14, 0.85, 0.3, 1) forwards;
+        }
+
+        @keyframes xmas-burst {
+          0% {
+            transform: translate(-50%, -50%) scale(0.2);
+            opacity: 1;
+          }
+          65% {
+            opacity: 1;
+          }
+          100% {
+            transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(0);
+            opacity: 0;
+          }
+        }
+
+        /* 결과 초대장 카드 */
+        .xmas-result-wrap {
+          position: relative;
+          margin: 22px auto 4px;
+          max-width: 370px;
+        }
+
+        .xmas-result-card {
+          position: relative;
+          padding: 28px 20px 24px;
+          border-radius: 18px;
+          border: 1.5px solid #d9b468;
+          background: linear-gradient(180deg, #fdfaf2 0%, #f4ebd7 100%);
+          color: #142820;
+          box-shadow:
+            0 20px 44px rgba(0, 0, 0, 0.48),
+            0 0 0 5px rgba(229, 193, 125, 0.16),
+            inset 0 0 0 6px rgba(217, 180, 104, 0.12);
+          animation: xmas-card-pop 0.58s cubic-bezier(0.2, 1.12, 0.32, 1) both;
+        }
+
+        @keyframes xmas-card-pop {
+          0% { opacity: 0; transform: translateY(24px) scale(0.86); }
+          100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .xmas-card-kicker {
+          font-size: 10.5px;
+          letter-spacing: 0.2em;
+          font-weight: 800;
+          color: #9e762d;
+          margin-bottom: 14px;
+        }
+
+        .xmas-dept-pill {
+          display: inline-block;
+          padding: 4px 14px;
+          border-radius: 999px;
+          background: linear-gradient(135deg, #163d2f, #0d261d);
+          color: #f3dcab;
+          border: 1px solid rgba(229, 193, 125, 0.45);
+          font-size: 12.5px;
+          font-weight: 700;
+          margin-bottom: 10px;
+        }
+
+        .xmas-target-name {
+          margin: 0;
+          font-size: 32px;
+          line-height: 1.25;
+          font-weight: 800;
+          letter-spacing: -0.02em;
+          color: #0f241c;
+          word-break: keep-all;
+        }
+
+        .xmas-target-nick {
+          margin: 4px 0 0;
+          font-size: 13px;
+          color: #6b5d47;
+          font-weight: 600;
+        }
+
+        .xmas-card-divider {
+          width: 48px;
+          height: 1.5px;
+          margin: 16px auto;
+          background: linear-gradient(90deg, transparent, #c79a44, transparent);
+        }
+
+        .xmas-ment {
+          margin: 0 0 20px;
+          font-size: 14px;
+          line-height: 1.6;
+          font-weight: 700;
+          color: #2f433a;
+          word-break: keep-all;
+        }
+
+        .xmas-next-btn {
+          width: 100%;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          padding: 13px 16px;
+          border-radius: 12px;
+          border: 1px solid rgba(237, 208, 146, 0.5);
+          background: linear-gradient(135deg, #163e30 0%, #0b231b 100%);
+          color: #f5dfae;
+          font-size: 14px;
+          font-weight: 700;
+          cursor: pointer;
+          box-shadow: 0 8px 18px rgba(11, 35, 27, 0.28);
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .xmas-next-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 22px rgba(11, 35, 27, 0.38);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .xmas-draw-wrap * {
+            animation: none !important;
+            transition: none !important;
+          }
+        }
+      `}</style>
+
+      <section className="xmas-draw-board" aria-labelledby="draw-title">
+        <div className="xmas-bokeh" aria-hidden="true" />
+        <div className="xmas-snow-layer" aria-hidden="true">
+          {[
+            { left: '8%', size: 4, dur: '8s', delay: '-2s' },
+            { left: '22%', size: 3, dur: '10s', delay: '-5s' },
+            { left: '38%', size: 4.5, dur: '9s', delay: '-1s' },
+            { left: '56%', size: 3, dur: '11s', delay: '-6s' },
+            { left: '72%', size: 4, dur: '8.5s', delay: '-3s' },
+            { left: '88%', size: 3.5, dur: '9.5s', delay: '-4s' },
+          ].map((flake, i) => (
+            <span
+              key={i}
+              className="xmas-snow-dot"
+              style={{
+                left: flake.left,
+                width: `${flake.size}px`,
+                height: `${flake.size}px`,
+                animationDuration: flake.dur,
+                animationDelay: flake.delay,
+              }}
+            />
+          ))}
+        </div>
+
+        <div className="xmas-draw-content">
+          <div className="xmas-badge">✦ CHRISTMAS SECRET MANITTO ✦</div>
+          <h2 id="draw-title" className="xmas-title">
+            내가 한달동안 마니또가 되어줄 사람은?
+          </h2>
+          <p className="xmas-subtitle" aria-live="polite">
+            {stage === 'idle'
+              ? '마음에 드는 선물상자 하나를 선택해 주세요'
+              : stage === 'drawing'
+              ? '두근두근, 선물상자가 열리고 있어요…'
+              : '선물상자가 열렸어요!'}
+          </p>
+
+          {stage !== 'revealed' ? (
+            <div className="xmas-boxes">
+              {boxes.map((box, index) => {
+                const selected = chosen === index;
+                const isOpening = selected && stage === 'drawing';
+                return (
+                  <button
+                    type="button"
+                    key={box.id}
+                    disabled={stage !== 'idle'}
+                    onClick={() => choose(index)}
+                    aria-label={`${index + 1}번 선물상자`}
+                    className={[
+                      'xmas-box-btn',
+                      chosen !== null && !selected ? 'is-dim' : '',
+                      isOpening ? 'is-opening' : '',
+                    ].join(' ')}
+                  >
+                    <span className="xmas-gift" aria-hidden="true">
+                      <span className="xmas-gift-shadow" />
+                      <span className="xmas-box-glow" />
+                      <span className="xmas-gift-lid" style={{ background: box.lid }}>
+                        <span className="xmas-gift-bow">
+                          <span className="xmas-gift-knot" />
+                        </span>
+                      </span>
+                      <span className="xmas-gift-body" style={{ background: box.body }} />
+                      {isOpening && (
+                        <span className="xmas-sparkle-layer">
+                          {sparkles.map((sp, sIdx) => (
+                            <span
+                              key={sIdx}
+                              className="xmas-sparkle"
+                              style={{
+                                '--tx': sp.tx,
+                                '--ty': sp.ty,
+                                '--sc': sp.c,
+                                transform: `scale(${sp.s})`,
+                              }}
+                            />
+                          ))}
+                        </span>
+                      )}
+                    </span>
+                    <span className="xmas-box-label">{box.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="xmas-result-wrap">
+              <div className="xmas-sparkle-layer" aria-hidden="true">
+                {sparkles.map((sp, sIdx) => (
+                  <span
+                    key={sIdx}
+                    className="xmas-sparkle"
+                    style={{
+                      '--tx': sp.tx,
+                      '--ty': sp.ty,
+                      '--sc': sp.c,
+                      animationDelay: sp.d,
+                    }}
+                  />
+                ))}
+              </div>
+              <div className="xmas-result-card" role="status">
+                <div className="xmas-card-kicker">✦ YOUR MANITTO ✦</div>
+                {deptLabel && <div className="xmas-dept-pill">{deptLabel}</div>}
+                <p className="xmas-target-name">{target}</p>
+                {targetNickname && targetNickname !== target && (
+                  <p className="xmas-target-nick">({targetNickname})</p>
+                )}
+                <div className="xmas-card-divider" />
+                <p className="xmas-ment">한달동안 마니또 활동 잘 부탁드립니다.</p>
+                <button type="button" onClick={onNext} className="xmas-next-btn">
+                  미니룸으로 가기 <ArrowRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function DashboardView({ myName, myMemberId,incomingReadAt,onOpenIncoming,treePosts,onTreeSave,onTreeDelete,target,targetDepartment, mySanta, isRevealed, events, onEditProfile, onActivity, onOpenMessage, onGiftSubmit, profiles, pairs }) {
