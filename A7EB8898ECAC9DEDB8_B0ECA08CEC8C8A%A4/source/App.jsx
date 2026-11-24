@@ -1125,8 +1125,10 @@ export default function App() {
             width:min(100%,125cqh); height:auto; aspect-ratio:1000 / 800; margin:0;
           }
           [data-fit-room="true"] .christmas-room .room-stage[data-terraces="true"] {
-            width:min(100%,260cqh); aspect-ratio:1690 / 650;
+            width:min(100%,245cqh); aspect-ratio:1960 / 800;
           }
+          [data-wide-view="true"] main:has([data-terraces="true"]) {padding-block:4px;}
+          [data-fit-room="true"]:has([data-terraces="true"]) .presentation-body {margin-top:4px;}
           [data-fit-room="true"] .room-toolbar .room-edit { display:none; }
         }
         .room-fit .room-stage { width:min(100%,1000px);height:auto;aspect-ratio:1000 / 800; }
@@ -1637,8 +1639,9 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
     return()=>media.removeEventListener('change',resize);
   },[]);
   const wide=desktopTerraces&&desktop;
-  const worldLeft=wide?-345:0;
-  const worldWidth=wide?1690:1000;
+  const worldLeft=wide?-480:0;
+  const worldWidth=wide?1960:1000;
+  const sceneX=x=>!wide?x:x<0?(x+345)*515/345-480:x<=1000?35+x*.93:965+(x-1000)*515/345;
   const [roomNow,setRoomNow]=useState(Date.now);
   const people=Object.entries(profiles||{}).filter(([,p])=>p._hasMinime===true&&isRoomVisible(p,roomNow)).map(([name,p])=>({...p,name,id:p._memberId||name})).sort((a,b)=>a.id.localeCompare(b.id));
   const appearance=getCrowdAppearance(people.length);
@@ -1660,17 +1663,18 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
     const sprites=new Map(people.map(person=>[person.id,AVATARS.indexOf(resolveAvatar(person.avatar))]));
     const mobile=window.matchMedia('(max-width: 639px)');
     const drawSprite=person=>{
+      const x=sceneX(person.x);
       const offset=(person.action==='sit'?4:0)+(reducedMotion?0:poseFrame(person.action,world.time-person.actionStarted,person.tempo));
       const width=44*appearance.scale*(mobile.matches?1.16:1),height=width*650/800;
       // Walking sprites face left in the source atlas.
       const mirror=person.action==='walk'&&person.facing===1;
       if(mirror){
         context.save();
-        context.translate(person.x*2,0);
+        context.translate(x*2,0);
         context.scale(-1,1);
       }
       context.drawImage(atlas,offset*96,sprites.get(person.id)*96,96,96,
-        person.x-width/2,person.y-height*41/44,width,height);
+        x-width/2,person.y-height*41/44,width,height);
       if(mirror)context.restore();
     };
     let frame,last=performance.now(),painted=-Infinity;
@@ -1692,7 +1696,7 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
         }
         residents.forEach(node=>{
           const person=byId.get(node.dataset.memberId);if(!person)return;
-          node.setAttribute('transform',`translate(${person.x.toFixed(2)} ${person.y.toFixed(2)})`);
+          node.setAttribute('transform',`translate(${sceneX(person.x).toFixed(2)} ${person.y.toFixed(2)})`);
           const action=person.action;
           if(node.dataset.action!==action){node.dataset.action=action;node.querySelector('.resident-status').textContent=ACTION_LABELS[action];}
         });
@@ -1710,16 +1714,11 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
   return <section className={`christmas-room ${expanded?'room-expanded':'room-fit'} border border-slate-300 rounded relative shrink-0 overflow-hidden shadow-inner`} aria-label="울장복 미니룸">
     <div className="room-toolbar"><strong>울장복 미니룸</strong><span className="room-count" aria-label={`방에 있는 미니미 ${people.length}명`}>함께하는 미니미 {people.length}명</span><button onClick={()=>setExpanded(!expanded)} className="room-edit">{expanded?'전체 보기':'확대 보기'}</button>{!demoMode&&<button onClick={onEdit} className="room-edit">내 미니미</button>}</div>
     <button onClick={()=>setTreeOpen(true)} disabled={demoMode} className="room-tree-button">🎄 큰 트리에 크리스마스 한마디 달기 · {notes.length}개의 장식</button>
-    <div className="room-scroll custom-scrollbar" style={{'--room-backdrop':`url(${ROOM_BACKGROUND})`}} ref={scroller} tabIndex={0} aria-label="계단으로 연결된 크리스마스 나무집">
+    <div className="room-scroll custom-scrollbar" style={{'--room-backdrop':`url(${wide?WIDE_ROOM_ART:ROOM_BACKGROUND})`}} ref={scroller} tabIndex={0} aria-label="계단으로 연결된 크리스마스 나무집">
       <div className="room-stage" data-terraces={wide?'true':undefined}>
         <svg ref={scene} viewBox={`${worldLeft} 0 ${worldWidth} 650`} className="room-scene connected-house" preserveAspectRatio="none" role="group" aria-label="1층과 2층을 계단으로 오가는 울장복 미니미들">
           <g className="room-background-layer" pointerEvents="none">
-          {wide?[
-            [-345,345,0,570],[0,1000,570,1032],[1000,345,1602,570],
-          ].map(([x,width,sourceX,sourceWidth])=><svg key={x} x={x} width={width} height="650"
-            viewBox={`${sourceX} 0 ${sourceWidth} 724`} preserveAspectRatio="none" overflow="hidden">
-            <image href={WIDE_ROOM_ART} width="2172" height="724"/>
-          </svg>):<image href={ROOM_BACKGROUND} width="1000" height="650" preserveAspectRatio="none" pointerEvents="none"/>}
+          {wide?<image href={WIDE_ROOM_ART} x={worldLeft} width={worldWidth} height="650" preserveAspectRatio="none"/>:<image href={ROOM_BACKGROUND} width="1000" height="650" preserveAspectRatio="none" pointerEvents="none"/>}
           <defs><radialGradient id="fire-warm-glow"><stop stopColor="#ffbd58" stopOpacity=".55"/><stop offset="1" stopColor="#ffae42" stopOpacity="0"/></radialGradient></defs>
           <ellipse className="hearth-glow" cx="817" cy="425" rx="91" ry="64" fill="url(#fire-warm-glow)" pointerEvents="none"/>
           <g className="hearth-flames" transform="translate(818 438)" pointerEvents="none"><path className="fire-tongue" d="M-16 0Q-23-13-12-24Q-11-15-7-18Q-9-35 1-43Q-3-24 8-19Q9-28 13-30Q26-11 17 0Z" fill="#ff8d2588"/><path className="fire-tongue flame-inner" d="M-9 0Q-15-14-5-23Q-5-14 2-28Q6-19 8-15Q16-8 10 0Z" fill="#ffdf8799"/></g>
