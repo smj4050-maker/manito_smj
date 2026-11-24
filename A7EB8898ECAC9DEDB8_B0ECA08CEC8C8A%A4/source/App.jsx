@@ -599,6 +599,60 @@ export default function App() {
     }
     showModal(`${label} 초기화 완료`, `게시물 ${removed}개를 삭제했어요.`);
   }, true);
+  const restoreGuestbookNicknames = () => runAction('admin-restore-guestbook-nicknames', async () => {
+    if (!roundId || !profilesReady) throw new Error('구성원 정보를 불러온 뒤 다시 눌러주세요.');
+    const feed = eventsCollection(roundId);
+    const pageSize = 100;
+    let cursor = null;
+    let updated = 0;
+    let unavailable = 0;
+    while (true) {
+      const page = await getDocsFromServer(cursor ? query(feed, startAfter(cursor), limit(pageSize)) : query(feed, limit(pageSize)));
+      const missing = page.docs.filter(item => item.data().type === 'message' && !item.data().writerNickname);
+      if (missing.length) {
+        const result = await runTransaction(db, async transaction => {
+          const [currentConfig, reveal, ...posts] = await Promise.all([
+            transaction.get(dataDoc('settings_config')),
+            transaction.get(dataDoc('reveal')),
+            ...missing.map(item => transaction.get(item.ref)),
+          ]);
+          if (currentConfig.data()?.roundId !== roundId) throw new Error('회차가 바뀌었어요. 방명록을 다시 열어주세요.');
+          const writersByTarget = new Map(Object.entries(reveal.data()?.pairs || {}).map(([writer, target]) => [target, writer]));
+          let changed = 0;
+          let skipped = 0;
+          for (const post of posts) {
+            const event = post.data();
+            if (!event || event.type !== 'message' || event.roundId !== roundId || event.writerNickname) continue;
+            const writer = writersByTarget.get(event.target);
+            const alias = writer && profiles[writer]?.nickname;
+            if (!alias?.trim() || alias.trim() === writer || alias.length > 30) {
+              skipped++;
+              continue;
+            }
+            transaction.update(post.ref, { writerNickname: alias });
+            changed++;
+          }
+          return { changed, skipped };
+        });
+        updated += result.changed;
+        unavailable += result.skipped;
+      }
+      if (page.size < pageSize) break;
+      cursor = page.docs.at(-1);
+    }
+    showModal('작성자 별명 채우기 완료', `${updated}개 글에 별명을 채웠어요.${unavailable ? ` 별명을 확인할 수 없는 글은 ${unavailable}개예요.` : ''}`);
+  }, true);
+  const confirmResetFeed = kind => {
+    const label = kind === 'photos' ? '사진첩' : '방명록';
+    const phrase = `${label}초기화`;
+    const description = kind === 'photos'
+      ? '모든 사진과 게시글이 삭제됩니다.'
+      : '현재 회차의 모든 일촌평과 활동 소식이 삭제되고, 연결된 비밀 답글도 볼 수 없게 됩니다.';
+    if (window.prompt(`${description} 되돌릴 수 없어요.
+계속하려면 ${phrase}를 입력해주세요.`)?.trim() === phrase) {
+      void handleResetFeed(kind);
+    }
+  };
   const migrationAttempt = useRef('');
   useEffect(() => {
     if (!isAdmin || !membersReady || !configReady || !members.length || members.every(m => m.nameKey && m.loginEmail)) return;
@@ -935,6 +989,18 @@ export default function App() {
                 onResetFeed={handleResetFeed}
                 onUndoGift={handleUndoGift}
               />
+            )}
+            {isAdmin && (activeTab === 'photos' || activeTab === 'guestbook') && (
+              <div className="mb-2 flex shrink-0 flex-wrap justify-end gap-2">
+                {activeTab === 'guestbook' && <button type="button" onClick={restoreGuestbookNicknames}
+                  className="rounded border border-blue-300 bg-white px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-50">
+                  기존 글 작성자 별명 채우기
+                </button>}
+                <button type="button" onClick={() => confirmResetFeed(activeTab)}
+                  className="rounded border border-red-300 bg-white px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50">
+                  {activeTab === 'photos' ? '사진첩 전체 글 삭제' : '방명록 전체 글 삭제'}
+                </button>
+              </div>
             )}
             {isAdmin&&presentationOpen&&<PresentationView profiles={visibleProfiles} treePosts={treePosts}
               roundId={roundId}
