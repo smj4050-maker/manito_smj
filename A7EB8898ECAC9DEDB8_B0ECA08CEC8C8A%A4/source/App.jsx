@@ -88,7 +88,17 @@ const writeStorage = (key,value) => {try{window.localStorage.setItem(key,value);
 const drawStorageKey = (name,roundId) => `manito:${FIREBASE_CONFIG.projectId}:${appId}:secure:draw:${encodeURIComponent(name)}:${roundId}`;
 const hasProfile = profile => typeof profile?.nickname === 'string' && !!profile.nickname.trim() && validAvatar(profile.avatar);
 const rosterFingerprint = list => JSON.stringify(list.map(m => [m.id, m.name, m.department, m.inviteId, m.nameKey, m.loginEmail]));
-const sameNames = (a, b) => JSON.stringify(a.map(m => m.name).sort()) === JSON.stringify(b.map(m => m.name).sort());
+function verifyManitoPairs(members, pairs) {
+  const names = new Set(members.map(member => member.name));
+  const targets = new Set(Object.values(pairs));
+  if (names.size !== members.length || Object.keys(pairs).length !== members.length
+    || targets.size !== members.length || members.some(({ name }) =>
+      !Object.hasOwn(pairs, name) || pairs[name] === name || !names.has(pairs[name]))) {
+    throw new Error('중복, 자기 배정 또는 누락이 발견되어 저장하지 않았어요.');
+  }
+}
+
+const sameMemberIds = (a, b) => JSON.stringify(a.map(m => m.id).sort()) === JSON.stringify(b.map(m => m.id).sort());
 const isValidPairs = pairs => isRecord(pairs) && Object.keys(pairs).length >= 2 &&
   new Set(Object.values(pairs)).size === Object.keys(pairs).length &&
   Object.keys(pairs).every(name => typeof pairs[name] === 'string' && pairs[name] !== name && hasOwn(pairs, pairs[name]));
@@ -451,12 +461,9 @@ export default function App() {
   useEffect(() => {
     setRevealedPairs({});
     if (!user || (!isAdmin && !(isLoggedIn && publicConfig.isRevealed))) return;
-    if (isAdmin) return onSnapshot(dataDoc('reveal'), snapshot => setRevealedPairs(snapshot.exists() ? snapshot.data().pairs || {} : {}), fail);
-    let active = true;
-    getDoc(dataDoc('reveal')).then(snapshot => {
-      if (active) setRevealedPairs(snapshot.exists() ? snapshot.data().pairs || {} : {});
-    }).catch(error => { if (active && error.code !== 'permission-denied') fail(error); });
-    return () => { active = false; };
+    return onSnapshot(dataDoc('reveal'), snapshot => {
+      setRevealedPairs(snapshot.exists() ? snapshot.data().pairs || {} : {});
+    }, error => { if (error.code !== 'permission-denied') fail(error); });
   }, [user?.uid, isAdmin, isLoggedIn, publicConfig.isRevealed, roundId]);
 
   useEffect(() => {
@@ -496,8 +503,8 @@ export default function App() {
 
   const saveMembers = async (newList, resetId) => {
     const normalized = await normalizeMembers(newList, members, resetId);
-    const changed = !sameNames(members, normalized);
-    if (changed && publicConfig.hasDraw && !window.confirm('구성원 이름이나 인원을 변경하면 현재 배정이 해제됩니다. 변경 후 다시 뽑아주세요. 계속할까요?')) return false;
+    const changed = !sameMemberIds(members, normalized);
+    if (changed && publicConfig.hasDraw && !window.confirm('구성원을 추가하거나 삭제하면 현재 배정이 해제됩니다. 변경 후 다시 뽑아주세요. 계속할까요?')) return false;
     await runTransaction(db, async transaction => {
       const [membersSnap, configSnap, revealSnap] = await Promise.all([transaction.get(dataDoc('settings_members')), transaction.get(dataDoc('settings_config')), transaction.get(dataDoc('reveal'))]);
       const oldMembers = membersSnap.exists() ? membersSnap.data().list || [] : [];
@@ -506,6 +513,10 @@ export default function App() {
       const oldKeys = await Promise.all(oldMembers.map(async m => m.nameKey || await hashToken(m.name)));
       const loginSnaps = await Promise.all(oldKeys.map(key => transaction.get(loginDoc(key))));
       const oldLogins = new Map(oldMembers.map((m,i) => [m.id, { key: oldKeys[i], data: loginSnaps[i].exists() ? loginSnaps[i].data() : null }]));
+      const oldNames = new Map(oldMembers.map(member => [member.name, member]));
+      const nextMembers = new Map(normalized.map(member => [member.id, member]));
+      const oldPairs = revealSnap.data()?.pairs || {};
+      const renamedPairs = [];
       // 모든 읽기를 끝낸 뒤 작성합니다. 번호 초기화 시 배정과 활동 내역은 보존합니다.
       for (const old of oldMembers) {
         const next = normalized.find(item => item.id === old.id);
@@ -521,23 +532,27 @@ export default function App() {
         const old = oldMembers.find(item => item.id === member.id);
         const oldLogin = oldLogins.get(member.id)?.data;
         const rotated = !old || old.inviteId !== member.inviteId;
-        const targetName = revealSnap.data()?.pairs?.[member.name] || '';
-        const target = normalized.find(item => item.name === targetName);
+        const oldTarget = oldNames.get(oldPairs[old?.name]);
+        const target = oldTarget && nextMembers.get(oldTarget.id);
         let assignmentData = {};
         if (changed) assignmentData = { targetId: '', targetName: '', targetDepartment: '', roundId: '' };
-        else if (target && current.hasDraw) {
-          assignmentData = { targetDepartment: target.department };
-          if (rotated) Object.assign(assignmentData, { targetId: target.id, targetName: target.name, roundId });
+        else if (current.hasDraw) {
+          if (!target) throw new Error('현재 배정 정보를 찾지 못했어요. 명단을 저장하지 않았습니다.');
+          assignmentData = { targetId: target.id, targetName: target.name, targetDepartment: target.department, roundId };
+          renamedPairs.push([member.name, target.name]);
         }
         transaction.set(inviteDoc(member.inviteId), { memberId: member.id, name: member.name, active: true, ...assignmentData }, { merge: true });
         transaction.set(loginDoc(member.nameKey), { name: member.name, memberId: member.id, inviteId: member.inviteId,
           email: member.loginEmail, ownerUid: !rotated && oldLogin?.email === member.loginEmail ? oldLogin.ownerUid || '' : '' });
         if (old && old.name !== member.name) transaction.set(profileDoc(member.id), { name: member.name }, { merge: true });
       }
+      if (!changed && current.hasDraw) verifyManitoPairs(normalized, Object.fromEntries(renamedPairs));
       transaction.set(dataDoc('settings_members'), { list: normalized });
       if (changed || !configSnap.exists()) {
         transaction.set(dataDoc('settings_config'), { hasDraw: false, isRevealed: false, roundId: makeId() });
         transaction.set(dataDoc('reveal'), { pairs: {} });
+      } else if (current.hasDraw && normalized.some(member => oldNames.get(member.name)?.id !== member.id)) {
+        transaction.update(dataDoc('reveal'), { pairs: Object.fromEntries(renamedPairs) });
       }
     });
   };
@@ -623,7 +638,7 @@ export default function App() {
           for (const post of posts) {
             const event = post.data();
             if (!event || event.type !== 'message' || event.roundId !== roundId || event.writerNickname) continue;
-            const writer = writersByTarget.get(event.target);
+            const writer = writersByTarget.get(currentEventTarget(event, profiles));
             const alias = writer && profiles[writer]?.nickname;
             if (!alias?.trim() || alias.trim() === writer || alias.length > 30) {
               skipped++;
@@ -705,6 +720,7 @@ export default function App() {
       const j = values[0] % range; [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
     const pairs = Object.fromEntries(shuffled.map((member, i) => [member.name, shuffled[(i + 1) % shuffled.length].name]));
+    verifyManitoPairs(normalized, pairs);
     const newRoundId = makeId();
     await runTransaction(db, async transaction => {
       const [membersSnap, configSnap] = await Promise.all([transaction.get(dataDoc('settings_members')), transaction.get(dataDoc('settings_config'))]);
@@ -1520,7 +1536,7 @@ function AdminView({ onSetup, isRevealed, onToggleReveal, onBack, config, profil
                     <label className="block text-xs text-slate-600">소속 부서<input aria-label="소속 부서" className="block w-full mt-1 p-2 border border-slate-300 rounded bg-white text-sm" value={singleDept} onChange={event=>setSingleDept(event.target.value)}/></label>
                     <label className="block text-xs text-slate-600">이름<input aria-label="구성원 이름" className="block w-full mt-1 p-2 border border-slate-300 rounded bg-white text-sm" value={singleName} onChange={event=>setSingleName(event.target.value)} autoFocus/></label>
                     <div className="flex gap-2"><button type="button" className="flex-1 border border-slate-300 rounded bg-white py-2 text-sm" onClick={()=>{setEditId(null);setSingleName('');setSingleDept('');}}>취소</button><button type="submit" className="flex-1 rounded bg-green-600 text-white py-2 font-bold text-sm">수정 저장</button></div>
-                    <p className="text-[11px] text-orange-700">※ 이름 변경 시 기존 마니또 배정이 초기화될 수 있으니 저장 전 확인해주세요.</p>
+                    <p className="text-[11px] text-orange-700">이름을 바꿔도 배정은 유지됩니다. 새 이름으로 ‘처음 등록’에서 로그인 번호를 정해주세요.</p>
                   </form>
                 )}
                 </div>
@@ -2782,7 +2798,7 @@ function DashboardView({ myName, myMemberId,incomingReadAt,onOpenIncoming,treePo
       {/* 1. Cyworld Miniroom (크리스마스 테마) */}
       <ChristmasMiniroom profiles={profiles} myName={myName} myMemberId={myMemberId} onEdit={onEditProfile} treePosts={treePosts} onTreeSave={onTreeSave} onTreeDelete={onTreeDelete} revealNames={isRevealed}/>
 
-      <IncomingNotice myName={myName} events={events} readAt={incomingReadAt} onOpen={onOpenIncoming}/>
+      <IncomingNotice profiles={profiles} myName={myName} events={events} readAt={incomingReadAt} onOpen={onOpenIncoming}/>
 
       {/* 2. Target Info (내가 챙길 사람) */}
       <div className="border border-slate-300 bg-white p-3 shrink-0">
@@ -2839,6 +2855,10 @@ function DashboardView({ myName, myMemberId,incomingReadAt,onOpenIncoming,treePo
   );
 }
 
+function currentEventTarget(event, profiles) {
+  return Object.values(profiles || {}).find(profile => profile._memberId && profile._memberId === event.targetId)?.name || event.target;
+}
+
 function DiaryFeed({events,replyContext,profiles,pairs,isRevealed,title="다이어리 (최근 소식)",emptyText="아직 다이어리가 비어있어요. 첫 번째 기록을 남겨주세요!"}) {
   const timeAgo = (ms) => {
     if (!ms) return '';
@@ -2863,8 +2883,9 @@ function DiaryFeed({events,replyContext,profiles,pairs,isRevealed,title="다이�
             </div>
           ) : (
             events.map((ev, idx) => {
+              const targetName = currentEventTarget(ev, profiles);
               const writerRealName = isRevealed && pairs
-                ? Object.keys(pairs).find(name => pairs[name] === ev.target)
+                ? Object.keys(pairs).find(name => pairs[name] === targetName)
                 : null;
               const writerAlias = ev.writerNickname
                 || (writerRealName && profiles?.[writerRealName]?.nickname);
@@ -2888,9 +2909,9 @@ function DiaryFeed({events,replyContext,profiles,pairs,isRevealed,title="다이�
                     <div className="flex-1">
                       <p className="text-slate-800 font-medium mb-1">
                         {ev.type === 'activity' ? (
-                          <><span className="font-bold text-blue-600">{ev.target} 님</span>의 마니또{writerRealName&&<> <strong>{writerNickname}</strong></>}가 다녀갔습니다! 본인 자리를 확인해보세요! 🏃💨</>
+                          <><span className="font-bold text-blue-600">{targetName} 님</span>의 마니또{writerRealName&&<> <strong>{writerNickname}</strong></>}가 다녀갔습니다! 본인 자리를 확인해보세요! 🏃💨</>
                         ) : (
-                          <><span className="font-bold text-orange-600">{writerNickname}</span>가 <span className="font-bold text-blue-600">{ev.target} 님</span>에게 {ev.type === 'visit' ? '다녀갔어요~' : '일촌평을 남겼어요!'}</>
+                          <><span className="font-bold text-orange-600">{writerNickname}</span>가 <span className="font-bold text-blue-600">{targetName} 님</span>에게 {ev.type === 'visit' ? '다녀갔어요~' : '일촌평을 남겼어요!'}</>
                         )}
                       </p>
                       {ev.type === 'message' && ev.text && (
@@ -2993,7 +3014,7 @@ function ReplyThread({roundId,eventId,role}) {
 
 function GuestbookView({events,profiles,pairs,isRevealed,myName,onWrite,replyContext,initialMineOnly=false}) {
   const [mineOnly,setMineOnly]=useState(initialMineOnly);
-  const messages=events.filter(event=>!mineOnly||event.target===myName);
+  const messages=events.filter(event=>!mineOnly||currentEventTarget(event, profiles)===myName);
   return <div className="flex flex-col min-h-full gap-3 pb-4"><div className="flex justify-between items-center border-b border-dashed border-slate-300 pb-2"><h2 className="text-sm font-bold text-blue-700">💌 울장복 방명록</h2>{onWrite&&<button onClick={onWrite} className="text-xs bg-blue-500 text-white border border-blue-700 px-3 py-1.5">일촌평 쓰기</button>}</div><p className="text-[10px] text-slate-500">나에게 온 마니또의 한마디와 다녀간 소식을 확인해보세요.</p>{myName&&<div className="flex gap-1" role="group" aria-label="방명록 보기 필터"><button onClick={()=>setMineOnly(false)} aria-pressed={!mineOnly} className={`text-xs px-3 py-1.5 border ${!mineOnly?'bg-blue-50 border-blue-400 text-blue-700 font-bold':'bg-white border-slate-300 text-slate-500'}`}>전체 글</button><button onClick={()=>setMineOnly(true)} aria-pressed={mineOnly} className={`text-xs px-3 py-1.5 border ${mineOnly?'bg-blue-50 border-blue-400 text-blue-700 font-bold':'bg-white border-slate-300 text-slate-500'}`}>내 마니또 소식</button></div>}<DiaryFeed replyContext={replyContext} events={messages} profiles={profiles} pairs={pairs} isRevealed={isRevealed} title={mineOnly?'내게 남긴 마니또 소식':'우리의 방명록과 활동 소식'} emptyText={mineOnly?'아직 내게 남긴 소식이 없어요.':'아직 방명록이 비어있어요.'}/></div>;
 }
 
@@ -3013,8 +3034,8 @@ function TreeBoard({posts,myMemberId,onSave,onDelete,onClose}) {
   return <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-3" role="dialog" aria-modal="true" aria-label="크리스마스 트리 꾸미기"><div className="bg-[#fffaf0] border-2 border-[#b38d70] rounded w-full max-w-md max-h-[90dvh] overflow-y-auto p-4 custom-scrollbar"><div className="flex items-center justify-between mb-2"><h2 className="text-base font-bold text-green-800">🎄 우리들의 크리스마스 트리</h2><button onClick={onClose} aria-label="트리 꾸미기 닫기" className="text-slate-500 px-2">✕</button></div><p className="text-[11px] text-slate-500 mb-3">처음엔 비어 있는 트리예요. 한마디를 남기면 장식 하나가 달려요. 내 장식은 언제든 바꾸거나 지울 수 있어요.</p><textarea aria-label="크리스마스 한마디" value={message} maxLength={160} onChange={e=>setMessage(e.target.value)} placeholder="동료들에게 전하고 싶은 크리스마스 한마디" className="border border-[#d9c5aa] bg-white w-full min-h-[76px] p-2 text-xs outline-none focus:border-green-500"/><div className="grid grid-cols-3 gap-1.5 my-2" role="group" aria-label="장식 모양">{choices.map(([id,label])=><button key={id} aria-pressed={kind===id} onClick={()=>setKind(id)} className={`border rounded text-xs py-2 ${kind===id?'border-green-500 bg-green-50':'border-[#dfcfb9] bg-white'}`}>{label}</button>)}</div><div className="flex gap-2 py-2" role="group" aria-label="장식 색상">{TREE_COLORS.map((value,index)=><button key={value} aria-label={['분홍색','금색','초록색','파란색','보라색','흰색'][index]} aria-pressed={color===value} onClick={()=>setColor(value)} style={{background:value}} className={`w-6 h-6 rounded-full border-2 ${color===value?'border-slate-700':'border-[#cbbca4]'}`}/>)}</div><button disabled={busy||!message.trim()} onClick={save} className="w-full text-xs font-bold text-white bg-green-700 border border-green-900 py-2 mt-1 disabled:opacity-40">{busy?'장식 다는 중…':own?'내 장식 바꾸기':'내 장식 달기'}</button>{own&&<button onClick={()=>onDelete(own)} className="block mx-auto text-[10px] text-red-500 mt-2">내 장식 삭제</button>}<div className="border-t border-dashed border-[#d9c5aa] mt-4 pt-3"><h3 className="text-xs text-green-800 font-bold mb-2">트리에 달린 한마디 {posts.length}개</h3><div className="space-y-2">{posts.length===0?<p className="text-xs text-slate-400 py-3 text-center">첫 장식의 주인공이 되어주세요!</p>:posts.map(post=><div key={post.memberId} className="border border-[#e2d2bc] bg-white rounded p-2"><div className="text-[10px] font-bold text-[#9a6552] mb-1">{post.nickname}</div><p className="text-xs text-slate-700 whitespace-pre-wrap break-words">{post.message}</p></div>)}</div></div></div></div>;
 }
 
-function IncomingNotice({myName,events,readAt=0,onOpen}) {
-  const incoming=events.filter(event=>event.target===myName),visits=incoming.filter(event=>event.type==='activity'),messages=incoming.filter(event=>event.type==='message');
+function IncomingNotice({myName,events,profiles,readAt=0,onOpen}) {
+  const incoming=events.filter(event=>currentEventTarget(event, profiles)===myName),visits=incoming.filter(event=>event.type==='activity'),messages=incoming.filter(event=>event.type==='message');
   const latest=visits[0],newest=incoming.reduce((value,event)=>Math.max(value,event.timestamp||0),0),unread=newest>readAt;
   return <div data-testid="incoming-notice" className="border border-orange-200 bg-[#fff9ed] px-3 py-2 rounded-sm shrink-0"><div className="flex items-center justify-between gap-2"><h2 className="text-[11px] font-bold text-orange-700 flex items-center gap-1">💌 나를 챙기는 마니또의 소식 {unread&&<span className="tab-new">NEW</span>}</h2><button onClick={onOpen} className="text-[10px] bg-white text-orange-700 border border-orange-200 rounded-sm px-2 py-1 whitespace-nowrap">내 소식 보기</button></div><div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mt-1.5"><p className="text-xs font-bold text-slate-700">{latest?'🎁 내 자리에 다녀갔대요!':'🎄 아직 다녀간 소식이 없어요.'}</p>{latest?.timestamp>0&&<time className="text-[9px] text-slate-500">{new Date(latest.timestamp).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'})}</time>}<span className="text-[10px] text-slate-500">최근 받은 일촌평 {messages.length}개</span></div></div>;
 }
