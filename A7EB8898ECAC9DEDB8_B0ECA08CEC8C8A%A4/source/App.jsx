@@ -76,8 +76,11 @@ const LEGACY_AVATARS = ['🎅', '🤶', '🦌', '⛄', '🧝', '🐧', '🐻', '
 const legacyAvatarMap = {'🎅':'mini-01','🤶':'mini-02','🦌':'mini-05','⛄':'mini-11','🧝':'mini-15','🐧':'mini-06','🐻':'mini-08','🐰':'mini-07'};
 const resolveAvatar = avatar => AVATARS.includes(avatar) ? avatar : legacyAvatarMap[avatar] || 'mini-01';
 const validAvatar = avatar => AVATARS.includes(avatar) || LEGACY_AVATARS.includes(avatar);
-const giftOpens = () => { const parts = new Intl.DateTimeFormat('en-GB', {timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()); const date = Object.fromEntries(parts.map(part => [part.type,part.value])); return `${date.year}-${date.month}-${date.day}` >= '2026-12-20'; };
+const giftOpens = () => { const parts = new Intl.DateTimeFormat('en-GB', {timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()); const date = Object.fromEntries(parts.map(part => [part.type,part.value])); return `${date.year}-${date.month}-${date.day}` >= '2026-12-23'; };
 const koreaDay = () => Math.floor((Date.now() + 9 * 60 * 60 * 1000) / 86400000);
+const visitStartDay = Date.UTC(2026, 10, 27) / 86400000;
+const visitTotalKey = 'event-20261127-total';
+const visitDayKey = day => `event-20261127-day-${day}`;
 const visitStatDoc = key => doc(db, 'artifacts', appId, 'visitStats', key);
 const pageViewDoc = id => doc(db, 'artifacts', appId, 'pageViews', id);
 const isRecord = value => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -334,15 +337,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    setVisitStats({today:null,total:null});
-    if (!user) return;
-    const totalStop = onSnapshot(visitStatDoc('total'), snap => setVisitStats(old => ({...old,total:snap.exists() ? snap.data().count : 0})), () => setVisitStats(old => ({...old,total:null})));
-    const dayStop = onSnapshot(visitStatDoc(`day-${visitDay}`), snap => setVisitStats(old => ({...old,today:snap.exists() ? snap.data().count : 0})), () => setVisitStats(old => ({...old,today:null})));
+    const started = visitDay >= visitStartDay;
+    setVisitStats(started ? {today:null,total:null} : {today:0,total:0});
+    if (!user || !started) return;
+    const totalStop = onSnapshot(visitStatDoc(visitTotalKey), snap => setVisitStats(old => ({...old,total:snap.exists() ? snap.data().count : 0})), () => setVisitStats(old => ({...old,total:null})));
+    const dayStop = onSnapshot(visitStatDoc(visitDayKey(visitDay)), snap => setVisitStats(old => ({...old,today:snap.exists() ? snap.data().count : 0})), () => setVisitStats(old => ({...old,today:null})));
     return () => {totalStop();dayStop();};
   }, [user?.uid, visitDay]);
 
   useEffect(() => {
-    if (!user || viewCounted.current) return;
+    if (!user || visitDay < visitStartDay || viewCounted.current) return;
     // 인증 계정이 익명→직원으로 바뀌어도 같은 페이지 열기는 한 번만 셉니다.
     // 개인 식별 정보 없이 집계하며 캐릭터의 접속 여부와는 연동하지 않습니다.
     viewCounting.current = viewCounting.current.catch(() => {}).then(async () => {
@@ -351,14 +355,14 @@ export default function App() {
         const page = await transaction.get(pageViewDoc(pageViewId.current));
         if (page.exists()) return;
         const day = koreaDay();
-        const [total, today] = await Promise.all([transaction.get(visitStatDoc('total')), transaction.get(visitStatDoc(`day-${day}`))]);
+        const [total, today] = await Promise.all([transaction.get(visitStatDoc(visitTotalKey)), transaction.get(visitStatDoc(visitDayKey(day)))]);
         transaction.set(pageViewDoc(pageViewId.current), {day,at:serverTimestamp()});
-        transaction.set(visitStatDoc('total'), {count:(total.exists() ? total.data().count : 0)+1,lastViewId:pageViewId.current});
-        transaction.set(visitStatDoc(`day-${day}`), {count:(today.exists() ? today.data().count : 0)+1,lastViewId:pageViewId.current});
+        transaction.set(visitStatDoc(visitTotalKey), {count:(total.exists() ? total.data().count : 0)+1,lastViewId:pageViewId.current});
+        transaction.set(visitStatDoc(visitDayKey(day)), {count:(today.exists() ? today.data().count : 0)+1,lastViewId:pageViewId.current});
       });
       viewCounted.current = true;
     }).catch(() => { /* 규칙 교체 전에는 집계 표시를 비워두고 앱은 계속 이용합니다. */ });
-  }, [user?.uid]);
+  }, [user?.uid, visitDay]);
 
   useEffect(() => {
     setSession(null); setSessionReady(false); setAssignment(null); setRevealedPairs({});
@@ -859,7 +863,7 @@ export default function App() {
   }, true);
 
   const handleGiftSubmit = async () => runAction('gift', async () => {
-    if (!giftOpens()) throw new Error('선물 준비 완료는 2026년 12월 20일(한국시간)부터 제출할 수 있어요.');
+    if (!giftOpens()) throw new Error('선물 준비 완료는 2026년 12월 23일(한국시간)부터 제출할 수 있어요.');
     requireParticipant(publicConfig);
     await setDoc(profileDoc(assignment.memberId), { giftSubmitted: true, giftRoundId: roundId }, { merge: true });
     if (identityRef.current === identity) showModal('감사합니다!', '선물 준비가 성공적으로 확인되었습니다. 🎅🎁');
@@ -1046,7 +1050,7 @@ export default function App() {
               />
             )}
             {((isAdmin&&!presentationOpen)||viewState==='dashboard')&&activeTab==='photos'&&<PhotoChatView isRevealed={publicConfig.isRevealed} posts={photoPosts} ready={photosReady} onPost={handlePhotoPost} onDelete={handlePhotoDelete} onError={fail} myMemberId={assignment?.memberId||'admin'} isAdmin={isAdmin} profiles={visibleProfiles} limitCount={photoLimit} onMore={()=>setPhotoLimit(value=>Math.min(150,value+30))}/>}
-            {((isAdmin&&!presentationOpen)||viewState==='dashboard')&&activeTab==='guestbook'&&<GuestbookView key={guestbookIncoming?'incoming':'all'} initialMineOnly={guestbookIncoming} events={visibleEvents} profiles={visibleProfiles} pairs={config.pairs} isRevealed={config.isRevealed} myName={myName} replyContext={!isAdmin&&isLoggedIn?{roundId,memberId:assignment.memberId,ownTargetId:assignment.targetId}:null} onWrite={isAdmin?null:()=>setShowMessageModal(true)}/>}
+            {((isAdmin&&!presentationOpen)||viewState==='dashboard')&&activeTab==='guestbook'&&<GuestbookView key={guestbookIncoming?'incoming':'all'} initialMineOnly={guestbookIncoming} events={visibleEvents} profiles={visibleProfiles} pairs={config.pairs} isRevealed={config.isRevealed} myName={myName} replyContext={!isAdmin&&isLoggedIn?{roundId,memberId:assignment.memberId,ownTargetId:assignment.targetId,ownNickname:profiles[myName]?.nickname}:null} onWrite={isAdmin?null:()=>setShowMessageModal(true)}/>}
           </main>
 
         </div>
@@ -2827,7 +2831,7 @@ function DashboardView({ myName, myMemberId,incomingReadAt,onOpenIncoming,treePo
         <div className="mt-2 border-t border-dashed border-slate-200 pt-2">
           {!myProfile.giftSubmitted ? (
             <button onClick={onGiftSubmit} disabled={!giftEnabled} className={`w-full text-white text-xs sm:text-sm font-bold py-2.5 rounded transition ${giftEnabled?'bg-green-600 hover:bg-green-700':'bg-slate-400 cursor-not-allowed'}`}>
-              {giftEnabled?'🎁 23일 선물 준비 완료! (누르면 방장에게 전달됨)':'🎁 선물 준비 완료는 12월 20일부터 누를 수 있어요'}
+              {giftEnabled?'🎁 23일 선물 준비 완료! (누르면 방장에게 전달됨)':'🎁 선물 준비 완료는 12월 23일부터 누를 수 있어요'}
             </button>
           ) : (
             <div className="w-full bg-green-100 text-green-800 text-[11px] sm:text-xs font-bold py-1.5 text-center rounded border border-green-300">
@@ -2887,7 +2891,8 @@ function DiaryFeed({events,replyContext,profiles,pairs,isRevealed,title="다이�
               const writerRealName = isRevealed && pairs
                 ? Object.keys(pairs).find(name => pairs[name] === targetName)
                 : null;
-              const writerAlias = ev.writerNickname
+              const ownAlias = ev.type === 'message' && ev.targetId === replyContext?.ownTargetId ? replyContext?.ownNickname : null;
+              const writerAlias = ev.writerNickname || ownAlias
                 || (writerRealName && profiles?.[writerRealName]?.nickname);
               const writerNickname = writerRealName
                 ? (writerAlias ? `${writerAlias}(${writerRealName})` : writerRealName)
