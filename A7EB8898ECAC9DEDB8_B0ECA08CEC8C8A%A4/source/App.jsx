@@ -1848,10 +1848,19 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
         x-width/2,person.y-height*41/44,width,height);
       if(mirror)context.restore();
     };
-    let frame,last=performance.now(),painted=-Infinity;
+    let frame, last = performance.now(), painted = -Infinity, visible = true;
     const interval=ids.length>=55?65:ids.length>=35?50:40;
+    const syncDrawing = () => {
+      cancelAnimationFrame(frame);
+      if (!visible || document.hidden) return;
+      last = performance.now();
+      frame = requestAnimationFrame(draw);
+    };
+    const observer = typeof IntersectionObserver === 'function' ? new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      syncDrawing();
+    }) : null;
     const draw=now=>{
-      if(document.hidden){last=now;frame=requestAnimationFrame(draw);return;}
       if(now-painted>=interval){
         stepCrowd(world,Math.min(.1,(now-last)/1000));
         last=now;painted=now;svg.dataset.motionTime=String(world.time);
@@ -1875,7 +1884,14 @@ function ChristmasMiniroom({profiles,myName,myMemberId,onEdit,treePosts,onTreeSa
       }
       frame=requestAnimationFrame(draw);
     };
-    draw(performance.now());return()=>cancelAnimationFrame(frame);
+    observer?.observe(svg);
+    document.addEventListener('visibilitychange', syncDrawing);
+    syncDrawing();
+    return () => {
+      observer?.disconnect();
+      document.removeEventListener('visibilitychange', syncDrawing);
+      cancelAnimationFrame(frame);
+    };
   },[crowdSignature,reducedMotion,canvasMode,wide]);
   return <section className={`christmas-room ${expanded?'room-expanded':'room-fit'} border border-slate-300 rounded relative shrink-0 overflow-hidden shadow-inner`} aria-label="울장복 미니룸">
     <div className="room-toolbar"><strong>울장복 미니룸</strong><span className="room-count" aria-label={`방에 있는 미니미 ${people.length}명`}>함께하는 미니미 {people.length}명</span><button onClick={()=>setExpanded(!expanded)} className="room-edit">{expanded?'전체 보기':'확대 보기'}</button>{!demoMode&&<button onClick={onEdit} className="room-edit">내 미니미</button>}</div>
@@ -2994,7 +3010,7 @@ function PhotoChatView({readOnly=false,isRevealed=false,posts,ready,onPost,onDel
         <PixelCharacter avatar={profile?.avatar||'mini-01'} className="photo-chat-avatar"/>
         <div className={`max-w-[88%] sm:max-w-[75%] min-w-0 border p-2.5 rounded ${own?'bg-blue-50 border-blue-200':'bg-white border-slate-300'}`}>
           <div className="flex items-center gap-3 justify-between mb-1.5"><strong className="text-[11px] text-slate-700">{writerLabel}</strong><span className="text-[9px] text-slate-400 whitespace-nowrap">{post.createdAt?new Date(post.createdAt).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'}):'전송 중'}</span></div>
-          {post.image&&<button type="button" onClick={()=>setZoom(post)} aria-label="사진 크게 보기" className="block mb-2 max-w-full"><img src={post.image} alt={post.text||`${post.nickname}님의 사진`} loading="lazy" className="max-h-72 max-w-full w-auto object-contain rounded-sm"/></button>}
+          {post.image&&<button type="button" onClick={()=>setZoom(post)} aria-label="사진 크게 보기" className="block mb-2 max-w-full"><img src={post.image} alt={post.text||`${post.nickname}님의 사진`} loading="lazy" decoding="async" className="max-h-72 max-w-full w-auto object-contain rounded-sm"/></button>}
           {post.text&&<p className="text-xs text-slate-700 whitespace-pre-wrap break-words leading-relaxed">{post.text}</p>}
           {!readOnly&&(own||isAdmin)&&<button type="button" onClick={()=>onDelete(post)} aria-label={`${post.nickname} 사진첩 글 삭제`} className="text-[10px] text-slate-400 hover:text-red-500 mt-2">삭제</button>}
         </div>
