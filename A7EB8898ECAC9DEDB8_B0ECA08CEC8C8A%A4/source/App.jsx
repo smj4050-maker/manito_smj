@@ -1031,7 +1031,7 @@ export default function App() {
               activeTab={activeTab}/>}
             {viewState === 'login' && <LoginView onLogin={handleLogin} onGoAdmin={() => setShowAdminAuth(true)} />}
             {viewState === 'profileSetup' && <ProfileSetupView onSetup={handleProfileSetup} />}
-            {isLoggedIn && viewState === 'draw' && <DrawView key={identity} target={getMyTarget()} targetDepartment={assignment?.targetDepartment} stage={drawStage} onStart={startDraw} onNext={goDashboard} profiles={visibleProfiles} />}
+            {isLoggedIn && viewState === 'draw' && <DrawView key={identity} target={getMyTarget()} targetDepartment={assignment?.targetDepartment} stage={drawStage} onStart={startDraw} onNext={goDashboard} />}
             {viewState === 'dashboard' && activeTab === 'home' && (
               <DashboardView 
                 myName={myName}
@@ -2011,9 +2011,8 @@ function LoginView({ onLogin, onGoAdmin }) {
   );
 }
 
-function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }) {
+function DrawView({ target, targetDepartment, stage, onStart, onNext }) {
   const [chosen, setChosen] = useState(null);
-  const targetNickname = profiles?.[target]?.nickname;
   const deptLabel = targetDepartment && targetDepartment !== '미분류' ? targetDepartment : '';
 
   const boxes = [
@@ -2653,13 +2652,6 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
           word-break: keep-all;
         }
 
-        .xmas-target-nick {
-          margin: 4px 0 0;
-          font-size: 13px;
-          color: #6b5d47;
-          font-weight: 600;
-        }
-
         .xmas-card-divider {
           width: 48px;
           height: 1.5px;
@@ -2822,9 +2814,6 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
                 <div className="xmas-card-kicker">✦ YOUR MANITTO ✦</div>
                 {deptLabel && <div className="xmas-dept-pill">{deptLabel}</div>}
                 <p className="xmas-target-name">{target}</p>
-                {targetNickname && targetNickname !== target && (
-                  <p className="xmas-target-nick">({targetNickname})</p>
-                )}
                 <div className="xmas-card-divider" />
                 <p className="xmas-ment">한달동안 마니또 활동 잘 부탁드립니다.</p>
                 <button type="button" onClick={onNext} className="xmas-next-btn">
@@ -2841,7 +2830,7 @@ function DrawView({ target, targetDepartment, stage, onStart, onNext, profiles }
 
 function DashboardView({ myName, myMemberId,incomingReadAt,onOpenIncoming,treePosts,onTreeSave,onTreeDelete,target,targetDepartment, mySanta, isRevealed, events, onEditProfile, onActivity, onOpenMessage, onGiftSubmit, profiles, pairs }) {
   const myProfile = profiles?.[myName] || { nickname: myName, avatar: '🎅' };
-  const targetProfile = profiles?.[target] || { nickname: target, avatar: '👤' };
+  const targetProfile = profiles?.[target] || { avatar: '👤' };
   const [giftEnabled,setGiftEnabled]=useState(giftOpens);
   useEffect(()=>{const timer=setInterval(()=>setGiftEnabled(giftOpens()),30000);return()=>clearInterval(timer);},[]);
 
@@ -2863,7 +2852,7 @@ function DashboardView({ myName, myMemberId,incomingReadAt,onOpenIncoming,treePo
             <PixelCharacter avatar={targetProfile.avatar} className="target-avatar mr-2"/>
             <div className="min-w-0">
               {targetDepartment && targetDepartment!=='미분류' && <div className="text-[11px] font-semibold text-blue-700 break-words">{targetDepartment}</div>}
-              <div className="break-words">{target} <span className="text-[10px] sm:text-xs font-normal text-slate-500">({targetProfile.nickname})</span></div>
+              <div className="break-words">{target}</div>
             </div>
           </div>
           <div className="flex space-x-1 sm:space-x-2">
